@@ -1,0 +1,46 @@
+rules_version = '2';
+// Reglas de seguridad de InmoFlow (Firestore).
+// - Administradores (rol "admin" en inmoflow_usuarios/{email}): leen y escriben todo.
+// - Dueños (rol "dueno"): solo LEEN los documentos donde su socioId figura en visiblePara.
+// - Nadie más puede leer nada. Toda escritura queda firmada (updatedBy = email de quien escribe).
+// - La auditoría es de solo agregado: no se puede editar ni borrar.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function logueado() { return request.auth != null && request.auth.token.email_verified == true; }
+    function email() { return request.auth.token.email.lower(); }
+    function superadmin() { return logueado() && email() == 'patriciocuffia@gmail.com'; }
+    function perfil() { return get(/databases/$(db)/documents/inmoflow_usuarios/$(email())).data; }
+    function habilitado() { return logueado() && exists(/databases/$(db)/documents/inmoflow_usuarios/$(email())); }
+    function esAdmin() { return superadmin() || (habilitado() && perfil().rol == 'admin'); }
+    function socio() { return perfil().socioId; }
+    function firmado() { return request.resource.data.updatedBy == email(); }
+
+    // Usuarios y roles: cada uno lee el suyo; solo los administradores los crean o cambian.
+    match /inmoflow_usuarios/{mail} {
+      allow read: if logueado() && (email() == mail || esAdmin());
+      allow write: if esAdmin();
+    }
+
+    // Configuración general (socios, plantillas, comisión): la leen todos los habilitados.
+    match /inmoflow_config/{id} {
+      allow read: if habilitado() || superadmin();
+      allow write: if esAdmin() && firmado();
+    }
+
+    // Registro de actividad: lo leen los administradores; se agrega, nunca se modifica.
+    match /inmoflow_auditoria/{id} {
+      allow read: if esAdmin();
+      allow create: if esAdmin() && firmado();
+      allow update, delete: if false;
+    }
+
+    // Datos: inmuebles, contratos, cobros, gastos, movimientos y mensajes.
+    match /{col}/{id} {
+      allow read: if col in ['inmoflow_inmuebles', 'inmoflow_contratos', 'inmoflow_pagos', 'inmoflow_gastos', 'inmoflow_movimientos', 'inmoflow_comunicaciones']
+                  && (esAdmin() || (habilitado() && socio() != '' && socio() in resource.data.visiblePara));
+      allow write: if col in ['inmoflow_inmuebles', 'inmoflow_contratos', 'inmoflow_pagos', 'inmoflow_gastos', 'inmoflow_movimientos', 'inmoflow_comunicaciones']
+                   && esAdmin() && firmado();
+    }
+  }
+}
