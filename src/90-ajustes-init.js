@@ -27,6 +27,7 @@ function renderAjustes(){
     '<div class="card"><h3>Notificaciones</h3><p class="small">InmoFlow te avisa al abrirla cuando hay ajustes, deudas o contratos por vencer.</p>' +
       ('Notification' in window ? (Notification.permission === 'granted' ? '<span class="tag t-ok">Activadas</span>' : '<button class="btn" onclick="Notification.requestPermission().then(function(){renderAjustes();notificarSiCorresponde()})">Activar notificaciones</button>') : '') + '</div>' +
     '<div class="card"><h3>Importar planilla de alquileres</h3><p class="small">Descargá la planilla de Google Sheets como Excel (Archivo → Descargar → .xlsx) y elegila. Se crean los contratos con su historial de cobros mes a mes y el próximo reajuste. Se pueden reimportar meses nuevos sin duplicar.</p><button class="btn p" onclick="elegirPlanilla()">Elegir .xlsx</button></div>' +
+    '<div class="card"><h3>Importar contratos vigentes</h3><p class="small">Archivo <b>.json</b> con los datos de los contratos firmados (partes, garantes, inmueble, vigencia, precio e índice). Completa los contratos que vienen de la planilla sin perder sus cobros y crea los demás. Se puede importar antes o después de la planilla.</p><button class="btn p" onclick="elegirContratosJSON()">Elegir .json</button></div>' +
     '<div class="card"><h3>Backup</h3><p class="small">Copia completa de los datos (sin los archivos, que quedan en Drive).</p><button class="btn" onclick="exportarBackup()">Descargar backup</button> <button class="btn" onclick="importarBackup()">Restaurar backup</button> <button class="btn" onclick="exportarExcel(\'todo\')">Exportar a Excel</button></div>' +
     '<div class="card"><h3>Categorías de gastos</h3><textarea class="f" id="s-cats" style="min-height:150px">' + esc(cfg.categoriasGasto.join('\n')) + '</textarea><button class="btn sm" style="margin-top:8px" onclick="DB.config.categoriasGasto=val(\'s-cats\').split(\'\\n\').map(function(s){return s.trim()}).filter(Boolean);guardarConfig();toast(\'Categorías guardadas\')">Guardar</button></div>' +
     '<div class="card" style="grid-column:1/-1"><h3>Plantillas de mensajes</h3><p class="hint">Variables: {locatario} {garante} {inmueble} {periodo} {monto} {vencimiento} {montoAnterior} {montoNuevo} {desde} {indice} {deuda} {detalleDeuda} {fin} {ultimoPago} {ultimoPeriodo} {firma}</p>' +
@@ -181,7 +182,8 @@ function ejecutarImportacion(a){
     if (!byId('inmuebles', inmId)) { guardar('inmuebles', { id: inmId, nombre: 'Inmueble de ' + titulo(nom), tipo: 'Departamento', titulares: titulares, ids: {}, costos: [], docs: [], notas: 'Creado al importar la planilla. Completá dirección, cuentas y costo.' }); nI++; }
     var c = byId('contratos', ctrId), nuevo = !c;
     if (nuevo) c = { id: ctrId, inmuebleId: inmId, locatario: { nombre: titulo(nom) }, garantes: [], indice: 'IPC', periodicidad: 4, ipcDesfase: 1, diaVencimiento: DB.config.diaVencimiento, comisionPct: '', docs: [], destino: 'Vivienda', notas: 'Importado de la planilla. Verificá índice, fechas y datos del locatario.' };
-    c.inicio = c.inicio && c.inicio <= ps[0] + '-01' ? c.inicio : ps[0] + '-01';
+    // si el contrato ya se cargó desde el documento firmado, su fecha de inicio manda (puede ser una renovación)
+    if (!c.archivoContrato) c.inicio = c.inicio && c.inicio <= ps[0] + '-01' ? c.inicio : ps[0] + '-01';
     // tramos de monto: cada vez que cambia el total, salvo meses parciales (notas con "días" o "1/2 mes")
     var montos = [], prev = null;
     ps.forEach(function(p){
@@ -190,11 +192,16 @@ function ejecutarImportacion(a){
       if (tot !== prev) { montos.push({ desde: p, monto: tot, nota: prev == null ? 'Monto según planilla' : 'Actualización según planilla' }); prev = tot; }
     });
     if (nuevo || !(c.montos || []).length) c.montos = montos;
+    else if (c.archivoContrato) {
+      // dentro del contrato, lo que figura en la planilla es lo que efectivamente se cobró: reemplaza o completa
+      montos.forEach(function(m){ if (m.desde < per(c.inicio)) return; var ex = c.montos.filter(function(x){ return x.desde === m.desde; })[0]; if (ex) { ex.monto = m.monto; ex.nota = m.nota; } else c.montos.push(m); });
+    }
     else montos.forEach(function(m){ if (!c.montos.some(function(x){ return x.desde === m.desde; }) && m.desde > montosOrd(c).slice(-1)[0].desde) c.montos.push(m); });
     var pr = u.reaj ? mesDeTexto(u.reaj, ultimo) : null;
     // sin dato de reajuste: se estima desde el último cambio de monto (si no, el calendario arrancaría en enero y daría falsos atrasos)
     if (!pr && c.periodicidad) { var ult = montosOrd(c).slice(-1)[0]; pr = perAdd(ult ? ult.desde : ps[0], c.periodicidad); while (pr <= ultimo) pr = perAdd(pr, c.periodicidad); }
     if (pr && (nuevo || !c.primerAjuste || c.primerAjuste < pr)) c.primerAjuste = pr;
+    if (!c.ccDesde || c.ccDesde > ps[0]) c.ccDesde = ps[0] > per(c.inicio) ? ps[0] : per(c.inicio); // la planilla empieza en enero: lo anterior no es deuda
     if (ps[ps.length - 1] < ultimo) { c.estado = 'finalizado'; c.fechaFinReal = finDeMes(ps[ps.length - 1]); }
     else if (nuevo) c.estado = 'vigente';
     guardar('contratos', c); if (nuevo) nC++;

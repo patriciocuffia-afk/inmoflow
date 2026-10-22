@@ -54,8 +54,8 @@ function htmlPorDueno(lista){
     G.inms.forEach(function(i){
       var c = contratoVigenteDe(i.id); if (!c) { libres++; return; }
       var f = cuentaCorriente(c).filas.filter(function(x){ return x.periodo === ph; })[0];
-      nCtr++; alq += montoVigente(c, ph);
-      if (f) { cobr += f.pagado; if (f.estado === 'pagado') nPag++; }
+      alq += montoVigente(c, ph);
+      if (f) { nCtr++; cobr += f.pagado; if (f.estado === 'pagado') nPag++; }
       deuda += sum(deudaContrato(c), function(x){ return x.debe - x.pagado; });
     });
     var av = G.g.socios.map(function(s){ return '<span class="av">' + esc(iniciales(nombreSocio(s))) + '</span>'; }).join('');
@@ -64,7 +64,7 @@ function htmlPorDueno(lista){
         '<span class="avs">' + av + '</span>' +
         '<span class="dueno-n"><b>' + esc(G.g.nombre) + '</b><span class="small muted">' + esc(G.g.detalle) + ' · ' + G.inms.length + (G.inms.length === 1 ? ' inmueble' : ' inmuebles') + (libres ? ' · ' + libres + ' libre' + (libres > 1 ? 's' : '') : '') + '</span></span>' +
         '<span class="dueno-k"><span class="small muted">Alquileres ' + perNom(ph).split(' ')[0].toLowerCase() + '</span><b>' + fmt(alq) + '</b></span>' +
-        '<span class="dueno-k"><span class="small muted">Cobrado</span><b>' + nPag + ' / ' + nCtr + '</b></span>' +
+        (nCtr ? '<span class="dueno-k"><span class="small muted">Cobrado</span><b>' + nPag + ' / ' + nCtr + '</b></span>' : '<span class="dueno-k"><span class="small muted">Cuenta</span><b>desde ' + esc(perNom(G.inms.map(function(i){ var c = contratoVigenteDe(i.id); return c && c.ccDesde || ''; }).sort().pop() || ph).toLowerCase()) + '</b></span>') +
         (deuda > 0 ? '<span class="tag t-bad">Deuda ' + fmt(deuda) + '</span>' : '<span class="tag t-ok">Al día</span>') +
         '<span class="chev">' + (abierto ? '▴' : '▾') + '</span>' +
       '</button>' +

@@ -283,7 +283,7 @@ body.simulando .sim-bar{display:block}
 // ═══════════════════════════════════════════
 // InmoFlow — núcleo: utilidades, base de datos local y sincronización
 // ═══════════════════════════════════════════
-var APP_VERSION = '2026-10-20-3';
+var APP_VERSION = '2026-10-22-1';
 var OAUTH_CLIENT_ID = '485000953207-g3r6kjptl4dvoc8p0u1aj20nket5mdrm.apps.googleusercontent.com';
 var PROJECT_ID = 'costo-de-obras';
 var FS_BASE = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID + '/databases/(default)/documents';
@@ -1004,6 +1004,7 @@ function nombreSocio(id){ var s = DB.config.socios.find(function(x){ return x.id
 // Cuenta corriente: por cada mes del contrato, lo que se debía y lo que se pagó.
 function cuentaCorriente(c){
   var desde = per(c.inicio), hasta = perHoy();
+  if (c.ccDesde && c.ccDesde > desde) desde = c.ccDesde; // meses anteriores a la gestión en InmoFlow no se reclaman
   if (c.fin && per(c.fin) < hasta) hasta = per(c.fin);
   if (c.estado === 'finalizado' && c.fechaFinReal) hasta = per(c.fechaFinReal);
   var pagos = pagosDe(c.id), filas = [], saldo = 0, dv = +c.diaVencimiento || DB.config.diaVencimiento || 10;
@@ -1663,8 +1664,8 @@ function htmlPorDueno(lista){
     G.inms.forEach(function(i){
       var c = contratoVigenteDe(i.id); if (!c) { libres++; return; }
       var f = cuentaCorriente(c).filas.filter(function(x){ return x.periodo === ph; })[0];
-      nCtr++; alq += montoVigente(c, ph);
-      if (f) { cobr += f.pagado; if (f.estado === 'pagado') nPag++; }
+      alq += montoVigente(c, ph);
+      if (f) { nCtr++; cobr += f.pagado; if (f.estado === 'pagado') nPag++; }
       deuda += sum(deudaContrato(c), function(x){ return x.debe - x.pagado; });
     });
     var av = G.g.socios.map(function(s){ return '<span class="av">' + esc(iniciales(nombreSocio(s))) + '</span>'; }).join('');
@@ -1673,7 +1674,7 @@ function htmlPorDueno(lista){
         '<span class="avs">' + av + '</span>' +
         '<span class="dueno-n"><b>' + esc(G.g.nombre) + '</b><span class="small muted">' + esc(G.g.detalle) + ' · ' + G.inms.length + (G.inms.length === 1 ? ' inmueble' : ' inmuebles') + (libres ? ' · ' + libres + ' libre' + (libres > 1 ? 's' : '') : '') + '</span></span>' +
         '<span class="dueno-k"><span class="small muted">Alquileres ' + perNom(ph).split(' ')[0].toLowerCase() + '</span><b>' + fmt(alq) + '</b></span>' +
-        '<span class="dueno-k"><span class="small muted">Cobrado</span><b>' + nPag + ' / ' + nCtr + '</b></span>' +
+        (nCtr ? '<span class="dueno-k"><span class="small muted">Cobrado</span><b>' + nPag + ' / ' + nCtr + '</b></span>' : '<span class="dueno-k"><span class="small muted">Cuenta</span><b>desde ' + esc(perNom(G.inms.map(function(i){ var c = contratoVigenteDe(i.id); return c && c.ccDesde || ''; }).sort().pop() || ph).toLowerCase()) + '</b></span>') +
         (deuda > 0 ? '<span class="tag t-bad">Deuda ' + fmt(deuda) + '</span>' : '<span class="tag t-ok">Al día</span>') +
         '<span class="chev">' + (abierto ? '▴' : '▾') + '</span>' +
       '</button>' +
@@ -1935,7 +1936,7 @@ function modalContrato(id, inmId){
     '<div class="fsec">Monto y actualización</div>' +
     '<div class="fr">' + inp('k-monto', 'Monto inicial mensual *', monto0, 'number', 'step="0.01"') + sel('k-idx', 'Índice de actualización', Object.keys(INDICES).map(function(k){ return [k, INDICES[k]]; }), c.indice, 'onchange="ctrIdx()"') + inp('k-per', 'Cada (meses)', c.periodicidad, 'number', 'min="0"') + '</div>' +
     '<div class="fr">' + inp('k-pfijo', '% fijo por ajuste', c.pctFijo, 'number', 'step="0.01"') + inp('k-prim', 'Primer ajuste (si no es inicio + período)', c.primerAjuste, 'month') + sel('k-desf', 'IPC: meses de desfase', [['0', 'Sin desfase'], ['1', '1 mes (habitual)'], ['2', '2 meses']], c.ipcDesfase == null ? 1 : c.ipcDesfase) + '</div>' +
-    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + inp('k-com', 'Comisión administrador % (vacío = general ' + DB.config.comisionPct + '%)', c.comisionPct, 'number', 'step="0.01"') + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + '</div>' +
+    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + inp('k-com', 'Comisión administrador % (vacío = general ' + DB.config.comisionPct + '%)', c.comisionPct, 'number', 'step="0.01"') + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + inp('k-ccd', 'Llevar la cuenta desde', c.ccDesde || '', 'month', 'title="Los meses anteriores no figuran como deuda"') + '</div>' +
     '<div class="fsec">Locatario</div>' + htmlPersona('k-loc', c.locatario, 'Locatario') +
     '<div class="fsec">Garantes</div><div id="k-gars">' + c.garantes.map(function(g, n){ return htmlPersona('k-g' + n, g, 'Garante ' + (n + 1)); }).join('') + '</div>' +
     '<button class="btn sm" onclick="ctrAddGarante()">+ Otro garante</button>' +
@@ -1955,7 +1956,7 @@ function guardarContrato(id){
   c.inicio = val('k-ini'); c.fin = val('k-fin'); if (!c.inicio) { toast('Falta la fecha de inicio'); return; }
   c.destino = val('k-dest'); c.indice = val('k-idx'); c.periodicidad = num(val('k-per')); c.pctFijo = num(val('k-pfijo'));
   c.primerAjuste = val('k-prim') || ''; c.ipcDesfase = num(val('k-desf'));
-  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com'); c.deposito = num(val('k-dep'));
+  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com'); c.deposito = num(val('k-dep')); c.ccDesde = val('k-ccd') || '';
   c.locatario = leerPersona('k-loc'); if (!c.locatario.nombre) { toast('Falta el nombre del locatario'); return; }
   c.garantes = []; for (var n = 0; n < (+$('k-gars').dataset.n || 1); n++) { var g = leerPersona('k-g' + n); if (g.nombre) c.garantes.push(g); }
   c.notas = val('k-notas');
@@ -2052,7 +2053,9 @@ function detCtrDatos(c){
     return '<div class="card"><h3>' + t + '</h3><div class="kv"><div>Nombre</div><div class="b">' + esc(p.nombre) + '</div><div>DNI/CUIT</div><div>' + esc(p.dni || '—') + '</div><div>Celular</div><div>' + (p.tel ? '<a href="' + linkWA(p.tel, '') + '" target="_blank" rel="noopener">' + esc(p.tel) + '</a>' : '—') + '</div><div>Email</div><div>' + (p.email ? '<a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' : '—') + '</div><div>Domicilio</div><div>' + esc(p.domicilio || '—') + '</div></div></div>';
   }
   var com = c.comisionPct !== '' && c.comisionPct != null ? c.comisionPct : DB.config.comisionPct;
-  return '<div class="grid g2">' + persona(c.locatario, 'Locatario') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
+  return (c.observaciones && c.observaciones.length ? '<div class="alert warn"><div class="ic">!</div><div class="tx"><b>Para revisar (surgió al cargar el contrato)</b><ul class="small" style="margin:4px 0 0;padding-left:18px">' + c.observaciones.map(function(o){ return '<li>' + esc(o) + '</li>'; }).join('') + '</ul></div></div>' : '') +
+    '<div class="grid g2">' + persona(c.locatario, 'Locatario') + (c.colocatarios || []).map(function(g){ return persona(g, 'Co-locatario'); }).join('') +
+    (c.locadorFormal ? '<div class="card"><h3>Locador según contrato</h3><div>' + esc(c.locadorFormal) + '</div></div>' : '') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
     '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
     (c.notas ? '<div class="hint" style="margin-top:8px;white-space:pre-wrap">' + esc(c.notas) + '</div>' : '') +
     '<div style="margin-top:12px">' + (estadoContrato(c) === 'vigente' || estadoContrato(c) === 'futuro' ? '<button class="btn sm" onclick="finalizarContrato(\'' + c.id + '\')">Finalizar contrato</button>' : '<button class="btn sm" onclick="reactivarContrato(\'' + c.id + '\')">Reactivar</button>') + '</div></div></div>';
@@ -2990,6 +2993,7 @@ function renderAjustes(){
     '<div class="card"><h3>Notificaciones</h3><p class="small">InmoFlow te avisa al abrirla cuando hay ajustes, deudas o contratos por vencer.</p>' +
       ('Notification' in window ? (Notification.permission === 'granted' ? '<span class="tag t-ok">Activadas</span>' : '<button class="btn" onclick="Notification.requestPermission().then(function(){renderAjustes();notificarSiCorresponde()})">Activar notificaciones</button>') : '') + '</div>' +
     '<div class="card"><h3>Importar planilla de alquileres</h3><p class="small">Descargá la planilla de Google Sheets como Excel (Archivo → Descargar → .xlsx) y elegila. Se crean los contratos con su historial de cobros mes a mes y el próximo reajuste. Se pueden reimportar meses nuevos sin duplicar.</p><button class="btn p" onclick="elegirPlanilla()">Elegir .xlsx</button></div>' +
+    '<div class="card"><h3>Importar contratos vigentes</h3><p class="small">Archivo <b>.json</b> con los datos de los contratos firmados (partes, garantes, inmueble, vigencia, precio e índice). Completa los contratos que vienen de la planilla sin perder sus cobros y crea los demás. Se puede importar antes o después de la planilla.</p><button class="btn p" onclick="elegirContratosJSON()">Elegir .json</button></div>' +
     '<div class="card"><h3>Backup</h3><p class="small">Copia completa de los datos (sin los archivos, que quedan en Drive).</p><button class="btn" onclick="exportarBackup()">Descargar backup</button> <button class="btn" onclick="importarBackup()">Restaurar backup</button> <button class="btn" onclick="exportarExcel(\'todo\')">Exportar a Excel</button></div>' +
     '<div class="card"><h3>Categorías de gastos</h3><textarea class="f" id="s-cats" style="min-height:150px">' + esc(cfg.categoriasGasto.join('\n')) + '</textarea><button class="btn sm" style="margin-top:8px" onclick="DB.config.categoriasGasto=val(\'s-cats\').split(\'\\n\').map(function(s){return s.trim()}).filter(Boolean);guardarConfig();toast(\'Categorías guardadas\')">Guardar</button></div>' +
     '<div class="card" style="grid-column:1/-1"><h3>Plantillas de mensajes</h3><p class="hint">Variables: {locatario} {garante} {inmueble} {periodo} {monto} {vencimiento} {montoAnterior} {montoNuevo} {desde} {indice} {deuda} {detalleDeuda} {fin} {ultimoPago} {ultimoPeriodo} {firma}</p>' +
@@ -3144,7 +3148,8 @@ function ejecutarImportacion(a){
     if (!byId('inmuebles', inmId)) { guardar('inmuebles', { id: inmId, nombre: 'Inmueble de ' + titulo(nom), tipo: 'Departamento', titulares: titulares, ids: {}, costos: [], docs: [], notas: 'Creado al importar la planilla. Completá dirección, cuentas y costo.' }); nI++; }
     var c = byId('contratos', ctrId), nuevo = !c;
     if (nuevo) c = { id: ctrId, inmuebleId: inmId, locatario: { nombre: titulo(nom) }, garantes: [], indice: 'IPC', periodicidad: 4, ipcDesfase: 1, diaVencimiento: DB.config.diaVencimiento, comisionPct: '', docs: [], destino: 'Vivienda', notas: 'Importado de la planilla. Verificá índice, fechas y datos del locatario.' };
-    c.inicio = c.inicio && c.inicio <= ps[0] + '-01' ? c.inicio : ps[0] + '-01';
+    // si el contrato ya se cargó desde el documento firmado, su fecha de inicio manda (puede ser una renovación)
+    if (!c.archivoContrato) c.inicio = c.inicio && c.inicio <= ps[0] + '-01' ? c.inicio : ps[0] + '-01';
     // tramos de monto: cada vez que cambia el total, salvo meses parciales (notas con "días" o "1/2 mes")
     var montos = [], prev = null;
     ps.forEach(function(p){
@@ -3153,11 +3158,16 @@ function ejecutarImportacion(a){
       if (tot !== prev) { montos.push({ desde: p, monto: tot, nota: prev == null ? 'Monto según planilla' : 'Actualización según planilla' }); prev = tot; }
     });
     if (nuevo || !(c.montos || []).length) c.montos = montos;
+    else if (c.archivoContrato) {
+      // dentro del contrato, lo que figura en la planilla es lo que efectivamente se cobró: reemplaza o completa
+      montos.forEach(function(m){ if (m.desde < per(c.inicio)) return; var ex = c.montos.filter(function(x){ return x.desde === m.desde; })[0]; if (ex) { ex.monto = m.monto; ex.nota = m.nota; } else c.montos.push(m); });
+    }
     else montos.forEach(function(m){ if (!c.montos.some(function(x){ return x.desde === m.desde; }) && m.desde > montosOrd(c).slice(-1)[0].desde) c.montos.push(m); });
     var pr = u.reaj ? mesDeTexto(u.reaj, ultimo) : null;
     // sin dato de reajuste: se estima desde el último cambio de monto (si no, el calendario arrancaría en enero y daría falsos atrasos)
     if (!pr && c.periodicidad) { var ult = montosOrd(c).slice(-1)[0]; pr = perAdd(ult ? ult.desde : ps[0], c.periodicidad); while (pr <= ultimo) pr = perAdd(pr, c.periodicidad); }
     if (pr && (nuevo || !c.primerAjuste || c.primerAjuste < pr)) c.primerAjuste = pr;
+    if (!c.ccDesde || c.ccDesde > ps[0]) c.ccDesde = ps[0] > per(c.inicio) ? ps[0] : per(c.inicio); // la planilla empieza en enero: lo anterior no es deuda
     if (ps[ps.length - 1] < ultimo) { c.estado = 'finalizado'; c.fechaFinReal = finDeMes(ps[ps.length - 1]); }
     else if (nuevo) c.estado = 'vigente';
     guardar('contratos', c); if (nuevo) nC++;
@@ -3303,6 +3313,98 @@ function renderMiCuenta(){
       '<li><b>iPhone (Safari):</b> abrí el link, tocá Compartir → <i>Agregar a inicio</i>.</li>' +
       '<li>Queda como una app más. La sesión se mantiene: no hace falta volver a ingresar cada vez.</li></ol></div>' +
   '</div>';
+}
+// ═══════════════════════════════════════════
+// Importación de contratos (archivo .json armado a partir de los contratos firmados)
+// Se combina con la planilla: los locatarios que están en la planilla usan los mismos
+// identificadores (imp-c-…), así se conserva el historial de cobros sin importar el orden.
+// ═══════════════════════════════════════════
+var TIPO_INM_MAP = { 'Casa': 'Casa', 'Departamento': 'Departamento', 'Dúplex': 'Dúplex', 'Local comercial': 'Local comercial', 'Terreno': 'Terreno', 'Oficina': 'Oficina', 'Cochera': 'Cochera' };
+
+function elegirContratosJSON(){
+  var fi = $('fileIn'); fi.multiple = false; fi.accept = '.json,application/json';
+  fi.onchange = function(){
+    var f = fi.files[0]; fi.value = ''; if (!f) return;
+    f.text().then(function(t){
+      var d = JSON.parse(t);
+      if (d.tipo !== 'inmoflow-contratos' || !Array.isArray(d.contratos)) throw new Error('No es un archivo de contratos de InmoFlow');
+      previaContratos(d);
+    }).catch(function(e){ alert('No se pudo leer: ' + e.message); });
+  };
+  fi.click();
+}
+function idsDeContrato(k){
+  return k.planilla ? { inm: 'imp-i-' + k.planilla, ctr: 'imp-c-' + k.planilla }
+    : { inm: 'ctr-i-' + slug(k.inmueble.direccion), ctr: 'ctr-c-' + slug(k.locatario.nombre) };
+}
+function previaContratos(d){
+  var nuevosSocios = (d.socios || []).filter(function(s){ return !DB.config.socios.some(function(x){ return x.id === s.id; }); });
+  var filas = d.contratos.map(function(k){
+    var ids = idsDeContrato(k), existe = !!byId('contratos', ids.ctr);
+    return '<tr><td><b>' + esc(k.locatario.nombre) + '</b><div class="small muted">' + esc(k.inmueble.nombre) + '</div></td><td class="small">' + k.titulares.map(function(t){ var s = DB.config.socios.concat(d.socios || []).filter(function(x){ return x.id === t.socioId; })[0]; return esc(s ? s.nombre : t.socioId) + (t.pct < 100 ? ' ' + t.pct + '%' : ''); }).join(' / ') + '</td>' +
+      '<td class="small">' + fDate(k.inicio) + ' → ' + fDate(k.fin) + '</td><td class="n">' + fmt(k.monto) + '</td><td class="small">' + esc(k.indice) + ' ' + k.periodicidad + 'm</td>' +
+      '<td>' + (existe ? '<span class="tag t-info">completa existente</span>' : '<span class="tag t-ok">nuevo</span>') + (k.observaciones && k.observaciones.length ? ' <span class="tag t-warn" title="' + esc(k.observaciones.join(' · ')) + '">revisar</span>' : '') + '</td></tr>';
+  }).join('');
+  abrirModal('Importar contratos vigentes',
+    '<p><b>' + d.contratos.length + ' contratos</b>' + (nuevosSocios.length ? ' y <b>' + nuevosSocios.length + ' locadores nuevos</b> (' + nuevosSocios.map(function(s){ return esc(s.nombre); }).join(', ') + ')' : '') + '.</p>' +
+    '<div class="tw" style="max-height:340px;overflow:auto"><table><thead><tr><th>Locatario / inmueble</th><th>Dueños</th><th>Vigencia</th><th class="n">Monto inicial</th><th>Ajuste</th><th></th></tr></thead><tbody>' + filas + '</tbody></table></div>' +
+    '<div class="calc small" style="margin-top:10px"><b>Cómo se combina:</b> los locatarios que ya vienen de la planilla se completan (DNI, contacto, garantes, dirección, vigencia e índice) y conservan su historial de cobros y montos. ' +
+    'Los contratos nuevos arrancan su cuenta corriente en <b>' + perNom(d.ccDesdeNuevos || perHoy()) + '</b> (lo anterior no figura como deuda) y su alquiler actual se <b>estima aplicando el índice</b> desde el inicio: verificalo con lo que efectivamente se cobra. Los puntos marcados “revisar” quedan anotados en cada contrato.</div>',
+    '<button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" id="btn-impc">Importar</button>', true);
+  $('btn-impc').onclick = function(){ ejecutarImportContratos(d); };
+}
+function ejecutarImportContratos(d){
+  var n = { socios: 0, inmN: 0, inmA: 0, ctrN: 0, ctrA: 0, est: 0 };
+  (d.socios || []).forEach(function(s){
+    if (DB.config.socios.some(function(x){ return x.id === s.id; })) return;
+    DB.config.socios.push(Object.assign({}, s)); n.socios++;
+  });
+  if (n.socios) guardarConfig();
+  var desdeNuevos = d.ccDesdeNuevos || perHoy();
+  d.contratos.forEach(function(k){
+    var ids = idsDeContrato(k);
+    // inmueble
+    var inm = byId('inmuebles', ids.inm), nuevoInm = !inm;
+    inm = nuevoInm ? { id: ids.inm, costos: [], docs: [], ids: {} } : JSON.parse(JSON.stringify(inm));
+    inm.nombre = k.inmueble.nombre; inm.direccion = k.inmueble.direccion; inm.localidad = k.inmueble.localidad || 'Oncativo';
+    inm.tipo = TIPO_INM_MAP[k.inmueble.tipo] || 'Otro';
+    inm.titulares = k.titulares.map(function(t){ return { socioId: t.socioId, pct: t.pct }; });
+    inm.ids = inm.ids || {}; if (k.inmueble.rentas) inm.ids.rentas = k.inmueble.rentas;
+    if (k.inmueble.descripcion && (!inm.notas || /Creado al importar la planilla/.test(inm.notas))) inm.notas = k.inmueble.descripcion;
+    guardar('inmuebles', inm); nuevoInm ? n.inmN++ : n.inmA++;
+    // contrato
+    var c = byId('contratos', ids.ctr), nuevoC = !c;
+    c = nuevoC ? { id: ids.ctr, docs: [], comisionPct: '', diaVencimiento: DB.config.diaVencimiento } : JSON.parse(JSON.stringify(c));
+    c.inmuebleId = ids.inm; c.locatario = Object.assign({}, k.locatario); c.colocatarios = k.colocatarios || [];
+    c.garantes = k.garantes || []; c.inicio = k.inicio; c.fin = k.fin; c.indice = k.indice; c.periodicidad = k.periodicidad;
+    c.destino = k.destino || 'Vivienda'; c.locadorFormal = k.locadorFormal || ''; c.observaciones = k.observaciones || []; c.archivoContrato = k.archivo;
+    if (c.fin >= hoy()) { c.estado = 'vigente'; delete c.fechaFinReal; }
+    c.notas = c.notas && !/Importado de la planilla/.test(c.notas) ? c.notas : 'Datos cargados del contrato "' + k.archivo + '".';
+    var inicioP = per(k.inicio), ms = montosOrd(c);
+    if (!ms.length) ms = [{ desde: inicioP, monto: k.monto, nota: 'Monto inicial según contrato' }];
+    else if (ms[0].desde > inicioP) ms.unshift({ desde: inicioP, monto: k.monto, nota: 'Monto inicial según contrato' });
+    c.montos = ms;
+    if (k.planilla) c.ccDesde = c.ccDesde || (inicioP > '2026-01' ? inicioP : '2026-01');
+    else {
+      c.ccDesde = c.ccDesde || (inicioP > desdeNuevos ? inicioP : desdeNuevos);
+      // alquiler actual estimado: se aplica el índice en cada ajuste ya vencido
+      if (nuevoC && ['ICL', 'IPC', 'UVA'].indexOf(k.indice) >= 0) {
+        calendarioAjustes(c).filter(function(p){ return p <= perHoy(); }).forEach(function(p){
+          if (c.montos.some(function(m){ return m.desde === p; })) return;
+          var a = calcularAjuste(c, p);
+          if (a.coef > 1) { c.montos.push({ desde: p, monto: a.monto, nota: 'Estimado con ' + k.indice + ' al importar (' + pct((a.coef - 1) * 100, 1) + ') — verificar' }); n.est++; }
+        });
+      } else if (nuevoC) {
+        // sin índice publicado para estimar (Casa Propia / manual): el próximo ajuste es el siguiente a hoy
+        var prox = calendarioAjustes(c).filter(function(p){ return p > perHoy(); })[0];
+        c.primerAjuste = prox || perAdd(per(k.fin), 1);
+      }
+    }
+    guardar('contratos', c); nuevoC ? n.ctrN++ : n.ctrA++;
+  });
+  cerrarModal(); renderTodo();
+  toast('Listo: ' + n.ctrN + ' contratos nuevos, ' + n.ctrA + ' completados, ' + n.inmN + ' inmuebles nuevos, ' + n.socios + ' locadores nuevos', 6000);
+  return n;
 }
 </script>
 </body>

@@ -169,6 +169,7 @@ function nombreSocio(id){ var s = DB.config.socios.find(function(x){ return x.id
 // Cuenta corriente: por cada mes del contrato, lo que se debía y lo que se pagó.
 function cuentaCorriente(c){
   var desde = per(c.inicio), hasta = perHoy();
+  if (c.ccDesde && c.ccDesde > desde) desde = c.ccDesde; // meses anteriores a la gestión en InmoFlow no se reclaman
   if (c.fin && per(c.fin) < hasta) hasta = per(c.fin);
   if (c.estado === 'finalizado' && c.fechaFinReal) hasta = per(c.fechaFinReal);
   var pagos = pagosDe(c.id), filas = [], saldo = 0, dv = +c.diaVencimiento || DB.config.diaVencimiento || 10;

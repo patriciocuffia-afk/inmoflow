@@ -55,7 +55,7 @@ function modalContrato(id, inmId){
     '<div class="fsec">Monto y actualización</div>' +
     '<div class="fr">' + inp('k-monto', 'Monto inicial mensual *', monto0, 'number', 'step="0.01"') + sel('k-idx', 'Índice de actualización', Object.keys(INDICES).map(function(k){ return [k, INDICES[k]]; }), c.indice, 'onchange="ctrIdx()"') + inp('k-per', 'Cada (meses)', c.periodicidad, 'number', 'min="0"') + '</div>' +
     '<div class="fr">' + inp('k-pfijo', '% fijo por ajuste', c.pctFijo, 'number', 'step="0.01"') + inp('k-prim', 'Primer ajuste (si no es inicio + período)', c.primerAjuste, 'month') + sel('k-desf', 'IPC: meses de desfase', [['0', 'Sin desfase'], ['1', '1 mes (habitual)'], ['2', '2 meses']], c.ipcDesfase == null ? 1 : c.ipcDesfase) + '</div>' +
-    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + inp('k-com', 'Comisión administrador % (vacío = general ' + DB.config.comisionPct + '%)', c.comisionPct, 'number', 'step="0.01"') + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + '</div>' +
+    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + inp('k-com', 'Comisión administrador % (vacío = general ' + DB.config.comisionPct + '%)', c.comisionPct, 'number', 'step="0.01"') + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + inp('k-ccd', 'Llevar la cuenta desde', c.ccDesde || '', 'month', 'title="Los meses anteriores no figuran como deuda"') + '</div>' +
     '<div class="fsec">Locatario</div>' + htmlPersona('k-loc', c.locatario, 'Locatario') +
     '<div class="fsec">Garantes</div><div id="k-gars">' + c.garantes.map(function(g, n){ return htmlPersona('k-g' + n, g, 'Garante ' + (n + 1)); }).join('') + '</div>' +
     '<button class="btn sm" onclick="ctrAddGarante()">+ Otro garante</button>' +
@@ -75,7 +75,7 @@ function guardarContrato(id){
   c.inicio = val('k-ini'); c.fin = val('k-fin'); if (!c.inicio) { toast('Falta la fecha de inicio'); return; }
   c.destino = val('k-dest'); c.indice = val('k-idx'); c.periodicidad = num(val('k-per')); c.pctFijo = num(val('k-pfijo'));
   c.primerAjuste = val('k-prim') || ''; c.ipcDesfase = num(val('k-desf'));
-  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com'); c.deposito = num(val('k-dep'));
+  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com'); c.deposito = num(val('k-dep')); c.ccDesde = val('k-ccd') || '';
   c.locatario = leerPersona('k-loc'); if (!c.locatario.nombre) { toast('Falta el nombre del locatario'); return; }
   c.garantes = []; for (var n = 0; n < (+$('k-gars').dataset.n || 1); n++) { var g = leerPersona('k-g' + n); if (g.nombre) c.garantes.push(g); }
   c.notas = val('k-notas');
@@ -172,7 +172,9 @@ function detCtrDatos(c){
     return '<div class="card"><h3>' + t + '</h3><div class="kv"><div>Nombre</div><div class="b">' + esc(p.nombre) + '</div><div>DNI/CUIT</div><div>' + esc(p.dni || '—') + '</div><div>Celular</div><div>' + (p.tel ? '<a href="' + linkWA(p.tel, '') + '" target="_blank" rel="noopener">' + esc(p.tel) + '</a>' : '—') + '</div><div>Email</div><div>' + (p.email ? '<a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' : '—') + '</div><div>Domicilio</div><div>' + esc(p.domicilio || '—') + '</div></div></div>';
   }
   var com = c.comisionPct !== '' && c.comisionPct != null ? c.comisionPct : DB.config.comisionPct;
-  return '<div class="grid g2">' + persona(c.locatario, 'Locatario') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
+  return (c.observaciones && c.observaciones.length ? '<div class="alert warn"><div class="ic">!</div><div class="tx"><b>Para revisar (surgió al cargar el contrato)</b><ul class="small" style="margin:4px 0 0;padding-left:18px">' + c.observaciones.map(function(o){ return '<li>' + esc(o) + '</li>'; }).join('') + '</ul></div></div>' : '') +
+    '<div class="grid g2">' + persona(c.locatario, 'Locatario') + (c.colocatarios || []).map(function(g){ return persona(g, 'Co-locatario'); }).join('') +
+    (c.locadorFormal ? '<div class="card"><h3>Locador según contrato</h3><div>' + esc(c.locadorFormal) + '</div></div>' : '') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
     '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
     (c.notas ? '<div class="hint" style="margin-top:8px;white-space:pre-wrap">' + esc(c.notas) + '</div>' : '') +
     '<div style="margin-top:12px">' + (estadoContrato(c) === 'vigente' || estadoContrato(c) === 'futuro' ? '<button class="btn sm" onclick="finalizarContrato(\'' + c.id + '\')">Finalizar contrato</button>' : '<button class="btn sm" onclick="reactivarContrato(\'' + c.id + '\')">Reactivar</button>') + '</div></div></div>';
