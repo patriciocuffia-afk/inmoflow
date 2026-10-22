@@ -90,3 +90,40 @@ function ejecutarImportContratos(d){
   toast('Listo: ' + n.ctrN + ' contratos nuevos, ' + n.ctrA + ' completados, ' + n.inmN + ' inmuebles nuevos, ' + n.socios + ' locadores nuevos', 6000);
   return n;
 }
+
+// ─── adjuntar en lote los archivos de los contratos firmados ───
+// Se eligen todos los .docx/.pdf juntos; cada uno se asocia a su contrato por el nombre del archivo.
+function normArchivo(n){ return sinAcentos(String(n || '')).toLowerCase().replace(/\.(docx?|pdf)$/i, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function elegirArchivosContratos(){
+  var fi = $('fileIn'); fi.multiple = true; fi.accept = '.doc,.docx,.pdf';
+  fi.onchange = function(){
+    var files = Array.prototype.slice.call(fi.files); fi.value = ''; if (!files.length) return;
+    var ctrs = vivos('contratos').filter(function(c){ return c.archivoContrato; });
+    var asign = [], sin = [];
+    files.forEach(function(f){
+      var c = ctrs.filter(function(x){ return normArchivo(x.archivoContrato) === normArchivo(f.name); })[0];
+      if (!c) { sin.push(f.name); return; }
+      if ((c.docs || []).some(function(d){ return normArchivo(d.nombre) === normArchivo(f.name); })) { sin.push(f.name + ' (ya estaba adjunto)'); return; }
+      asign.push({ c: c, f: f });
+    });
+    abrirModal('Adjuntar contratos firmados',
+      '<p><b>' + asign.length + '</b> archivo(s) se van a adjuntar a su contrato' + (AUTH_TOKEN || conFirebase() ? ' y guardar en Google Drive (carpeta InmoFlow), compartidos solo-lectura con el dueño si tiene usuario.' : ' (sin Google: quedan solo en este dispositivo).') + '</p>' +
+      (asign.length ? '<div class="tw" style="max-height:240px;overflow:auto"><table><tbody>' + asign.map(function(a){ return '<tr><td class="small">' + esc(a.f.name) + '</td><td class="small">→ ' + esc(etiquetaContrato(a.c)) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+      (sin.length ? '<div class="hint" style="margin-top:8px">No se adjuntan: ' + sin.map(esc).join(', ') + '</div>' : '') +
+      '<div class="hint" id="adj-prog" style="margin-top:8px"></div>',
+      '<button class="btn" onclick="cerrarModal()">Cancelar</button>' + (asign.length ? '<button class="btn p" id="btn-adj">Adjuntar ' + asign.length + '</button>' : ''));
+    if (asign.length) $('btn-adj').onclick = function(){
+      var go = function(){
+        $('btn-adj').disabled = true; var ok = 0;
+        asign.reduce(function(acc, a, k){
+          return acc.then(function(){
+            $('adj-prog').textContent = 'Subiendo ' + (k + 1) + ' de ' + asign.length + ': ' + a.f.name;
+            return subirArchivos('contratos', a.c.id, [a.f], 'Contrato', { silencioso: true }).then(function(r){ if (r) ok++; });
+          });
+        }, Promise.resolve()).then(function(){ cerrarModal(); renderTodo(); toast(ok + ' de ' + asign.length + ' contratos adjuntados', 5000); });
+      };
+      if (conFirebase() && !AUTH_TOKEN && !tokenGuardado()) conDrive(go); else go();
+    };
+  };
+  fi.click();
+}

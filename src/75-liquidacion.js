@@ -45,12 +45,22 @@ function rendicion(p, socioId, conSaldo){
     else if (m.tipo === 'entre' && m.destinoId === socioId) v = -num(m.monto);
     if (v) R.movs.push({ tipo: 'mov', txt: textoMov(m, socioId), monto: v, mov: m });
   });
+  // honorarios inmobiliarios (única vez) a cargo del locador, en el mes en que se liquidan
+  R.hon = [];
+  vivos('contratos').forEach(function(c){
+    var h = honorariosContrato(c);
+    if (!h.monto || h.paga !== 'locador' || h.mes !== p) return;
+    var d = distribucionInm(byId('inmuebles', c.inmuebleId)).find(function(t){ return t.socioId === socioId; });
+    if (!d || !num(d.pct)) return;
+    R.hon.push({ contrato: c, txt: 'Honorarios inmobiliarios ' + titulo(c.locatario.nombre) + ' (' + pct(h.pct, 2) + (h.baseTipo === 'total' ? ' del contrato' : ' de un mes') + (num(d.pct) < 100 ? ', ' + r2(d.pct) + '%' : '') + ')', monto: h.monto * num(d.pct) / 100 });
+  });
   R.alq.sort(function(a, b){ return a.loc.localeCompare(b.loc); });
   R.totalAlq = sum(R.alq, function(a){ return a.monto; });
   R.com = sum(R.alq, function(a){ return a.com; });
+  R.totalHon = sum(R.hon, function(h){ return h.monto; });
   R.totalGas = sum(R.gastos, function(g){ return g.monto; });
   R.totalMov = sum(R.movs, function(m){ return m.monto; });
-  R.netoMes = R.totalAlq - R.com - R.totalGas + R.totalMov;
+  R.netoMes = R.totalAlq - R.com - R.totalHon - R.totalGas + R.totalMov;
   var desde = DB.config.rendicionDesde;
   if (conSaldo && desde && desde < p) { for (var m = desde; m < p; m = perAdd(m, 1)) R.saldoAnt += rendicion(m, socioId, false).netoMes; }
   R.neto = R.netoMes + R.saldoAnt;
@@ -69,7 +79,10 @@ function cajaAdmin(p){
   var sal = sum(ms.filter(function(m){ return m.tipo === 'retiro' || m.tipo === 'transferencia'; }), function(m){ return m.monto; });
   var apo = sum(ms.filter(function(m){ return m.tipo === 'aporte'; }), function(m){ return m.monto; });
   var com = sum(cobrosDelMes(p), function(x){ return x.comision; });
-  return { rec: rec, gas: gas, sal: sal, apo: apo, com: com, saldo: rec - gas - sal + apo - com };
+  // honorarios del mes: los del locador salen de lo que se rinde; los del locatario los cobra la administración aparte
+  var hon = 0, honLoc = 0;
+  vivos('contratos').forEach(function(c){ var h = honorariosContrato(c); if (!h.monto || h.mes !== p) return; if (h.paga === 'locador') hon += h.monto; else honLoc += h.monto; });
+  return { rec: rec, gas: gas, sal: sal, apo: apo, com: com, hon: hon, honLoc: honLoc, saldo: rec - gas - sal + apo - com - hon };
 }
 
 function renderLiquidacion(){
@@ -86,7 +99,7 @@ function renderLiquidacion(){
   h += '<div class="kpis">' + Rs.map(function(x){
       return kpi('Neto a cobrar ' + esc(x.s.nombre), '<span class="' + (x.R.neto < -1 ? 'neg-v' : '') + '">' + fmt(x.R.neto) + '</span>', x.R.neto < -1 ? 'tiene de más: debe reintegrar' : 'le debe la administración');
     }).join('') +
-    kpi('Comisión ' + esc(DB.config.administrador || ''), fmt(caja.com), pct(DB.config.comisionPct, 2) + ' de lo cobrado') +
+    kpi('Ingresos ' + esc(DB.config.administrador || 'administración'), fmt(caja.com + caja.hon + caja.honLoc), 'comisión ' + fmt(caja.com) + (caja.hon + caja.honLoc ? ' · honorarios ' + fmt(caja.hon + caja.honLoc) : '')) +
     (esAdmin() ? kpi('Caja administración', fmt(caja.saldo), 'entró ' + fmt(caja.rec + caja.apo) + ' · salió ' + fmt(caja.gas + caja.sal)) : '') +
     kpi('Pendientes de cobro', pend.length, pend.length ? fmt(sum(pend, function(x){ return x.f.debe - x.f.pagado; })) : 'todo cobrado') + '</div>';
   h += '<div class="grid g2">' + Rs.map(function(x){ return htmlRendicion(x.s, x.R, p); }).join('') + '</div>';
@@ -97,6 +110,8 @@ function renderLiquidacion(){
     '<div class="row"><span class="muted">− Gastos pagados con la caja</span><span>' + fmt(caja.gas) + '</span></div>' +
     '<div class="row"><span class="muted">− Retiros y transferencias a socios</span><span>' + fmt(caja.sal) + '</span></div>' +
     '<div class="row"><span class="muted">− Comisión ' + esc(DB.config.administrador || '') + '</span><span>' + fmt(caja.com) + '</span></div>' +
+    (caja.hon ? '<div class="row"><span class="muted">− Honorarios inmobiliarios (a cargo de locadores)</span><span>' + fmt(caja.hon) + '</span></div>' : '') +
+    (caja.honLoc ? '<div class="row"><span class="muted">Honorarios cobrados a locatarios (aparte)</span><span>' + fmt(caja.honLoc) + '</span></div>' : '') +
     '<div class="liq-tot"><span>Queda en caja (a rendir)</span><span>' + fmt(caja.saldo) + '</span></div>' +
     '<div class="hint">Debe coincidir con la suma de los “neto a cobrar” del mes de los socios. Si no, falta registrar algún retiro o quién recibió algún cobro.</div>' +
     '<div class="fr" style="margin-top:12px;max-width:420px"><div><label class="l" for="liq-desde">Arrastrar saldos entre meses desde</label><input class="f" type="month" id="liq-desde" value="' + esc(DB.config.rendicionDesde || '') + '" onchange="DB.config.rendicionDesde=this.value;guardarConfig();renderLiquidacion()"></div></div>' +
@@ -111,7 +126,8 @@ function htmlRendicion(s, R, p){
       return fila(esc(a.loc) + (a.pct < 100 ? ' <span class="muted small">' + r2(a.pct) + '%</span>' : ''), a.monto, a.recibio.length ? ' <span class="tag t-info" title="Quién recibió el dinero">→ ' + esc(a.recibio.join(', ')) + '</span>' : '', 'modalPago(\'' + a.pago.id + '\')');
     }).join('') : '<div class="hint">Sin cobros en el mes.</div>') +
     '<div class="liq-tot"><span>TOTAL NETO ALQUILERES</span><span>' + fmt(R.totalAlq) + '</span></div>' +
-    fila('Comisión ' + esc(DB.config.administrador || 'administración') + ' ' + pct(DB.config.comisionPct, 2), -R.com) +
+    fila('Comisión ' + esc(DB.config.administrador || 'administración') + (R.totalAlq ? ' ' + pct(R.com / R.totalAlq * 100, 2) : ''), -R.com) +
+    (R.hon.length ? '<div class="liq-sec">Honorarios inmobiliarios (única vez)</div>' + R.hon.map(function(h){ return fila(esc(h.txt), -h.monto, '', 'modalContrato(\'' + h.contrato.id + '\')'); }).join('') : '') +
     (R.gastos.length ? '<div class="liq-sec">Gastos</div>' + R.gastos.map(function(g){ return fila(esc(g.txt), -g.monto, '', 'modalGasto(\'' + g.gasto.id + '\')'); }).join('') : '') +
     (R.movs.length ? '<div class="liq-sec">Retiros / transferencias</div>' + R.movs.map(function(m){
       var oc = m.pago ? 'modalPago(\'' + m.pago.id + '\')' : m.gasto ? 'modalGasto(\'' + m.gasto.id + '\')' : 'modalMovimiento(\'' + m.mov.id + '\')';
@@ -188,7 +204,8 @@ function liquidacionTexto(){
   DB.config.socios.filter(function(s){ return VISTA === 'total' || VISTA === s.id; }).forEach(function(s){
     var R = rendicion(p, s.id, true);
     t += '\n*' + s.nombre.toUpperCase() + '*\n' + R.alq.map(function(a){ return '• ' + titulo(a.loc) + ': ' + fmt(a.monto); }).join('\n');
-    t += '\nTotal alquileres: ' + fmt(R.totalAlq) + '\nComisión ' + (DB.config.administrador || '') + ' ' + pct(DB.config.comisionPct, 2) + ': −' + fmt(R.com);
+    t += '\nTotal alquileres: ' + fmt(R.totalAlq) + '\nComisión ' + (DB.config.administrador || '') + (R.totalAlq ? ' ' + pct(R.com / R.totalAlq * 100, 2) : '') + ': −' + fmt(R.com);
+    R.hon.forEach(function(h){ t += '\n' + h.txt + ': −' + fmt(h.monto); });
     R.gastos.forEach(function(g){ t += '\n' + g.txt + ': −' + fmt(g.monto); });
     R.movs.forEach(function(m){ t += '\n' + m.txt + ': ' + (m.monto < 0 ? '−' + fmt(-m.monto) : fmt(m.monto)); });
     if (R.saldoAnt) t += '\nSaldo anterior: ' + fmt(R.saldoAnt);
@@ -215,7 +232,8 @@ function liquidacionPDF(){
     sec('ALQUILERES');
     R.alq.forEach(function(a){ ln(titulo(a.loc) + (a.pct < 100 ? ' (' + r2(a.pct) + '%)' : ''), a.monto); });
     doc.setDrawColor(203, 213, 225); doc.line(x0, y - 3, xr, y - 3); ln('TOTAL NETO ALQUILERES', R.totalAlq, true);
-    ln('Comisión ' + (DB.config.administrador || '') + ' ' + pct(DB.config.comisionPct, 2), -R.com);
+    ln('Comisión ' + (DB.config.administrador || '') + (R.totalAlq ? ' ' + pct(R.com / R.totalAlq * 100, 2) : ''), -R.com);
+    R.hon.forEach(function(h){ ln(h.txt, -h.monto); });
     if (R.gastos.length) { sec('GASTOS'); R.gastos.forEach(function(g){ ln(g.txt, -g.monto); }); }
     if (R.movs.length) { sec('RETIROS / TRANSFERENCIAS'); R.movs.forEach(function(m){ ln(m.txt, m.monto); }); }
     if (R.saldoAnt) ln('Saldo de meses anteriores', R.saldoAnt);
@@ -232,6 +250,7 @@ function liquidacionExcel(){
     R.alq.forEach(function(a){ filas.push({ Seccion: 'Alquileres', Concepto: a.loc + ' — ' + a.inm, '%': a.pct, Monto: r2(a.monto) }); });
     filas.push({ Seccion: 'Total', Concepto: 'TOTAL NETO ALQUILERES', Monto: r2(R.totalAlq) });
     filas.push({ Seccion: 'Comisión', Concepto: 'Comisión ' + (DB.config.administrador || ''), Monto: -r2(R.com) });
+    R.hon.forEach(function(h){ filas.push({ Seccion: 'Honorarios', Concepto: h.txt, Monto: -r2(h.monto) }); });
     R.gastos.forEach(function(g){ filas.push({ Seccion: 'Gastos', Concepto: g.txt, Monto: -r2(g.monto) }); });
     R.movs.forEach(function(m){ filas.push({ Seccion: 'Retiros/transferencias', Concepto: m.txt, Monto: r2(m.monto) }); });
     if (R.saldoAnt) filas.push({ Seccion: 'Saldo anterior', Concepto: 'Meses anteriores', Monto: r2(R.saldoAnt) });

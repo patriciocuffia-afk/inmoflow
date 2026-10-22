@@ -64,6 +64,25 @@ function fbCargarPerfil(){
   });
 }
 
+// Usuarios que se dan de alta solos la primera vez que entra un administrador (una sola vez:
+// si después se les quita el acceso desde Ajustes, no vuelven a crearse).
+var USUARIOS_INICIALES = [
+  { email: 'antofalco08@hotmail.com', nombre: 'Antonella', rol: 'admin', socioId: '' }
+];
+function provisionarUsuariosIniciales(){
+  if (!conFirebase() || !esAdmin()) return Promise.resolve();
+  var hechos = DB.config.usuariosProvisionados || [];
+  var pend = USUARIOS_INICIALES.filter(function(u){ return hechos.indexOf(u.email) < 0; });
+  return pend.reduce(function(acc, u){
+    return acc.then(function(){
+      return fsGetDoc('usuarios', u.email).then(function(ex){
+        if (ex) return;
+        return fsPutUsuario(u).then(function(){ auditoriaManual('alta', 'usuarios', u.email, u.email + ' → administrador (alta inicial)'); toast(u.nombre + ' ya puede ingresar como administradora'); });
+      }).then(function(){ DB.config.usuariosProvisionados = (DB.config.usuariosProvisionados || []).concat([u.email]); guardarConfig(); });
+    });
+  }, Promise.resolve()).catch(function(e){ console.warn('alta inicial', e); });
+}
+
 // ─── pantalla de ingreso ─────────────────────
 function mostrarLogin(msg){
   var el = $('login');
@@ -84,7 +103,7 @@ function ingresar(){
       if (r.error) { mostrarLogin('No se pudo ingresar con Google.'); return; }
       setSync('busy', 'Ingresando…');
       fbLoginConGoogle(r.access_token).then(fbCargarPerfil).then(function(){
-        ocultarLogin(); DB_LIMPIAR_SI_OTRO_USUARIO(); sincronizar(true); renderTodo();
+        ocultarLogin(); DB_LIMPIAR_SI_OTRO_USUARIO(); sincronizar(true).then(provisionarUsuariosIniciales); renderTodo();
         toast('Hola ' + quienSoy());
       }).catch(function(e){ fbGuardarSes(null); USUARIO = null; mostrarLogin(e.message); setSync('err', 'Sin sesión'); });
     }

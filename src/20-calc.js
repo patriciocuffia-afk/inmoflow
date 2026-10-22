@@ -304,3 +304,13 @@ function enLetras(n){
   var txt = todo(ent).replace(/uno$/, 'un');
   return (txt + (cent ? ' con ' + p2(cent) + '/100' : '')).toUpperCase();
 }
+
+// Honorarios inmobiliarios (única vez, al firmar): % sobre el valor total del contrato o sobre un mes de alquiler.
+function honorariosContrato(c){
+  var pctH = num(c.honorariosPct), ms = montosOrd(c), mensual = ms.length ? num(ms[0].monto) : 0;
+  var meses = c.inicio && c.fin ? Math.max(1, perDiff(per(c.inicio), per(addDias(c.fin, 1)))) : 0;
+  var tipo = c.honorariosBase === 'mes' ? 'mes' : 'total';
+  var base = tipo === 'mes' ? mensual : mensual * meses;
+  return { pct: pctH, baseTipo: tipo, base: base, mensual: mensual, meses: meses, monto: r2(base * pctH / 100),
+    paga: c.honorariosPaga === 'locatario' ? 'locatario' : 'locador', mes: c.honorariosMes || (c.inicio ? per(c.inicio) : '') };
+}

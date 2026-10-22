@@ -145,12 +145,12 @@ function compartirConDuenos(driveId, col, obj){
     }));
   }).catch(function(e){ console.warn('compartir', e); });
 }
-function subirArchivos(col, id, files, cat){
+function subirArchivos(col, id, files, cat, opts){
   var obj = byId(col, id); if (!obj || !files.length) return;
   if (conFirebase() && !AUTH_TOKEN && !tokenGuardado()) { conDrive(function(){ subirArchivos(col, id, files, cat); }); return; }
   var carpeta = col === 'inmuebles' ? obj.nombre : col === 'contratos' ? 'Contrato ' + obj.locatario.nombre : 'Comprobantes de gastos';
   toast('Subiendo ' + files.length + ' archivo(s)…', 60000);
-  files.reduce(function(acc, f){
+  return files.reduce(function(acc, f){
     return acc.then(function(){
       var d = { id: uid(), nombre: f.name, tipo: f.type, size: f.size, fecha: hoy(), cat: cat };
       var p = AUTH_TOKEN ? driveSubir(f, carpeta).then(function(r){ d.driveId = r.id; d.url = r.webViewLink; return compartirConDuenos(r.id, col, obj); })
@@ -158,7 +158,8 @@ function subirArchivos(col, id, files, cat){
       return p.then(function(){ obj.docs = (obj.docs || []).concat([d]); });
     });
   }, Promise.resolve()).then(function(){
-    guardar(col, obj); toast('Archivos guardados');
+    guardar(col, obj); if (!(opts && opts.silencioso)) toast('Archivos guardados');
+    if (opts && opts.silencioso) return true;
     if (col === 'gastos') modalGasto(id); else renderTodo();
   }).catch(function(e){ console.error(e); toast('Error al subir: ' + e.message, 5000); });
 }

@@ -283,7 +283,7 @@ body.simulando .sim-bar{display:block}
 // ═══════════════════════════════════════════
 // InmoFlow — núcleo: utilidades, base de datos local y sincronización
 // ═══════════════════════════════════════════
-var APP_VERSION = '2026-10-22-1';
+var APP_VERSION = '2026-10-22-2';
 var OAUTH_CLIENT_ID = '485000953207-g3r6kjptl4dvoc8p0u1aj20nket5mdrm.apps.googleusercontent.com';
 var PROJECT_ID = 'costo-de-obras';
 var FS_BASE = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID + '/databases/(default)/documents';
@@ -714,6 +714,25 @@ function fbCargarPerfil(){
   });
 }
 
+// Usuarios que se dan de alta solos la primera vez que entra un administrador (una sola vez:
+// si después se les quita el acceso desde Ajustes, no vuelven a crearse).
+var USUARIOS_INICIALES = [
+  { email: 'antofalco08@hotmail.com', nombre: 'Antonella', rol: 'admin', socioId: '' }
+];
+function provisionarUsuariosIniciales(){
+  if (!conFirebase() || !esAdmin()) return Promise.resolve();
+  var hechos = DB.config.usuariosProvisionados || [];
+  var pend = USUARIOS_INICIALES.filter(function(u){ return hechos.indexOf(u.email) < 0; });
+  return pend.reduce(function(acc, u){
+    return acc.then(function(){
+      return fsGetDoc('usuarios', u.email).then(function(ex){
+        if (ex) return;
+        return fsPutUsuario(u).then(function(){ auditoriaManual('alta', 'usuarios', u.email, u.email + ' → administrador (alta inicial)'); toast(u.nombre + ' ya puede ingresar como administradora'); });
+      }).then(function(){ DB.config.usuariosProvisionados = (DB.config.usuariosProvisionados || []).concat([u.email]); guardarConfig(); });
+    });
+  }, Promise.resolve()).catch(function(e){ console.warn('alta inicial', e); });
+}
+
 // ─── pantalla de ingreso ─────────────────────
 function mostrarLogin(msg){
   var el = $('login');
@@ -734,7 +753,7 @@ function ingresar(){
       if (r.error) { mostrarLogin('No se pudo ingresar con Google.'); return; }
       setSync('busy', 'Ingresando…');
       fbLoginConGoogle(r.access_token).then(fbCargarPerfil).then(function(){
-        ocultarLogin(); DB_LIMPIAR_SI_OTRO_USUARIO(); sincronizar(true); renderTodo();
+        ocultarLogin(); DB_LIMPIAR_SI_OTRO_USUARIO(); sincronizar(true).then(provisionarUsuariosIniciales); renderTodo();
         toast('Hola ' + quienSoy());
       }).catch(function(e){ fbGuardarSes(null); USUARIO = null; mostrarLogin(e.message); setSync('err', 'Sin sesión'); });
     }
@@ -1138,6 +1157,16 @@ function enLetras(n){
   }
   var txt = todo(ent).replace(/uno$/, 'un');
   return (txt + (cent ? ' con ' + p2(cent) + '/100' : '')).toUpperCase();
+}
+
+// Honorarios inmobiliarios (única vez, al firmar): % sobre el valor total del contrato o sobre un mes de alquiler.
+function honorariosContrato(c){
+  var pctH = num(c.honorariosPct), ms = montosOrd(c), mensual = ms.length ? num(ms[0].monto) : 0;
+  var meses = c.inicio && c.fin ? Math.max(1, perDiff(per(c.inicio), per(addDias(c.fin, 1)))) : 0;
+  var tipo = c.honorariosBase === 'mes' ? 'mes' : 'total';
+  var base = tipo === 'mes' ? mensual : mensual * meses;
+  return { pct: pctH, baseTipo: tipo, base: base, mensual: mensual, meses: meses, monto: r2(base * pctH / 100),
+    paga: c.honorariosPaga === 'locatario' ? 'locatario' : 'locador', mes: c.honorariosMes || (c.inicio ? per(c.inicio) : '') };
 }
 // ═══════════════════════════════════════════
 // Gráficos SVG livianos (sin librerías): columnas + línea, barras horizontales,
@@ -1934,9 +1963,16 @@ function modalContrato(id, inmId){
     '<div class="fr">' + sel('k-inm', 'Inmueble *', [['', '— elegir —']].concat(inms.map(function(i){ return [i.id, i.nombre]; })), c.inmuebleId) + sel('k-dest', 'Destino', ['Vivienda', 'Comercial', 'Cochera', 'Temporario', 'Otro'], c.destino) + '</div>' +
     '<div class="fr">' + inp('k-ini', 'Inicio *', c.inicio, 'date', 'onchange="ctrFin()"') + inp('k-dur', 'Duración (meses)', dur, 'number', 'oninput="ctrFin()"') + inp('k-fin', 'Fin', c.fin, 'date') + '</div>' +
     '<div class="fsec">Monto y actualización</div>' +
-    '<div class="fr">' + inp('k-monto', 'Monto inicial mensual *', monto0, 'number', 'step="0.01"') + sel('k-idx', 'Índice de actualización', Object.keys(INDICES).map(function(k){ return [k, INDICES[k]]; }), c.indice, 'onchange="ctrIdx()"') + inp('k-per', 'Cada (meses)', c.periodicidad, 'number', 'min="0"') + '</div>' +
+    '<div class="fr">' + inp('k-monto', 'Monto inicial mensual *', monto0, 'number', 'step="0.01" oninput="ctrHon()"') + sel('k-idx', 'Índice de actualización', Object.keys(INDICES).map(function(k){ return [k, INDICES[k]]; }), c.indice, 'onchange="ctrIdx()"') + inp('k-per', 'Cada (meses)', c.periodicidad, 'number', 'min="0"') + '</div>' +
     '<div class="fr">' + inp('k-pfijo', '% fijo por ajuste', c.pctFijo, 'number', 'step="0.01"') + inp('k-prim', 'Primer ajuste (si no es inicio + período)', c.primerAjuste, 'month') + sel('k-desf', 'IPC: meses de desfase', [['0', 'Sin desfase'], ['1', '1 mes (habitual)'], ['2', '2 meses']], c.ipcDesfase == null ? 1 : c.ipcDesfase) + '</div>' +
-    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + inp('k-com', 'Comisión administrador % (vacío = general ' + DB.config.comisionPct + '%)', c.comisionPct, 'number', 'step="0.01"') + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + inp('k-ccd', 'Llevar la cuenta desde', c.ccDesde || '', 'month', 'title="Los meses anteriores no figuran como deuda"') + '</div>' +
+    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + '<input type="hidden" id="k-com" value="' + esc(c.comisionPct == null ? '' : c.comisionPct) + '">' + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + inp('k-ccd', 'Llevar la cuenta desde', c.ccDesde || '', 'month', 'title="Los meses anteriores no figuran como deuda"') + '</div>' +
+    '<div class="fsec">Comisión y honorarios de la administración</div>' +
+    '<div class="fr">' + inp('k-com2', 'Comisión mensual por administración %', c.comisionPct, 'number', 'step="0.01" placeholder="vacío = general ' + DB.config.comisionPct + '%" oninput="$(\'k-com\').value=this.value"') +
+      inp('k-hpct', 'Honorarios inmobiliarios % (única vez)', c.honorariosPct, 'number', 'step="0.01" oninput="ctrHon()"') +
+      sel('k-hbase', 'Calculados sobre', [['total', 'El valor total del contrato'], ['mes', 'Un mes de alquiler']], c.honorariosBase || 'total', 'onchange="ctrHon()"') + '</div>' +
+    '<div class="fr">' + sel('k-hpaga', 'Los paga', [['locador', 'El locador (se descuenta en su liquidación)'], ['locatario', 'El locatario (los cobra la administración)']], c.honorariosPaga || 'locador', 'onchange="ctrHon()"') +
+      inp('k-hmes', 'Se liquidan en el mes', c.honorariosMes || (c.inicio ? per(c.inicio) : ''), 'month', 'onchange="ctrHon()"') + '</div>' +
+    '<div class="calc small" id="k-hcalc"></div>' +
     '<div class="fsec">Locatario</div>' + htmlPersona('k-loc', c.locatario, 'Locatario') +
     '<div class="fsec">Garantes</div><div id="k-gars">' + c.garantes.map(function(g, n){ return htmlPersona('k-g' + n, g, 'Garante ' + (n + 1)); }).join('') + '</div>' +
     '<button class="btn sm" onclick="ctrAddGarante()">+ Otro garante</button>' +
@@ -1944,10 +1980,17 @@ function modalContrato(id, inmId){
     (id ? '<button class="btn d" onclick="eliminarContrato(\'' + id + '\')">Eliminar</button><span style="flex:1"></span>' : '') +
     '<button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="guardarContrato(\'' + (id || '') + '\')">Guardar</button>', true);
   if (!c.fin) ctrFin();
-  ctrIdx();
+  ctrIdx(); ctrHon();
   $('k-gars').dataset.n = c.garantes.length;
 }
-function ctrFin(){ var i = val('k-ini'), d = num(val('k-dur')); if (i && d) { var d2 = new Date(i + 'T12:00'); d2.setMonth(d2.getMonth() + d); d2.setDate(d2.getDate() - 1); $('k-fin').value = d2.toISOString().slice(0, 10); } }
+function ctrFin(){ setTimeout(ctrHon); var i = val('k-ini'), d = num(val('k-dur')); if (i && d) { var d2 = new Date(i + 'T12:00'); d2.setMonth(d2.getMonth() + d); d2.setDate(d2.getDate() - 1); $('k-fin').value = d2.toISOString().slice(0, 10); } }
+function ctrHon(){
+  var el = $('k-hcalc'); if (!el) return;
+  var h = honorariosContrato({ honorariosPct: num(val('k-hpct')), honorariosBase: val('k-hbase'), honorariosPaga: val('k-hpaga'), honorariosMes: val('k-hmes'),
+    inicio: val('k-ini'), fin: val('k-fin'), montos: [{ desde: per(val('k-ini') || hoy()), monto: num(val('k-monto')) }] });
+  el.innerHTML = h.monto ? 'Honorarios: <b>' + fmt(h.monto) + '</b> (' + pct(h.pct, 2) + ' de ' + fmt(h.base) + (h.baseTipo === 'total' ? ' = ' + h.meses + ' meses × ' + fmt(h.mensual) : '') + '), a cargo del ' + h.paga + ', en la liquidación de ' + perNom(h.mes) + '.'
+    : 'Sin honorarios inmobiliarios para este contrato.';
+}
 function ctrIdx(){ var x = val('k-idx'); $('k-pfijo').parentNode.style.display = x === 'FIJO' ? '' : 'none'; $('k-desf').parentNode.style.display = x === 'IPC' ? '' : 'none'; }
 function ctrAddGarante(){ var g = $('k-gars'), n = +g.dataset.n || 1; g.insertAdjacentHTML('beforeend', htmlPersona('k-g' + n, {}, 'Garante ' + (n + 1))); g.dataset.n = n + 1; }
 function guardarContrato(id){
@@ -1956,7 +1999,7 @@ function guardarContrato(id){
   c.inicio = val('k-ini'); c.fin = val('k-fin'); if (!c.inicio) { toast('Falta la fecha de inicio'); return; }
   c.destino = val('k-dest'); c.indice = val('k-idx'); c.periodicidad = num(val('k-per')); c.pctFijo = num(val('k-pfijo'));
   c.primerAjuste = val('k-prim') || ''; c.ipcDesfase = num(val('k-desf'));
-  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com'); c.deposito = num(val('k-dep')); c.ccDesde = val('k-ccd') || '';
+  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com2'); c.honorariosPct = num(val('k-hpct')); c.honorariosBase = val('k-hbase'); c.honorariosPaga = val('k-hpaga'); c.honorariosMes = val('k-hmes') || per(val('k-ini')); c.deposito = num(val('k-dep')); c.ccDesde = val('k-ccd') || '';
   c.locatario = leerPersona('k-loc'); if (!c.locatario.nombre) { toast('Falta el nombre del locatario'); return; }
   c.garantes = []; for (var n = 0; n < (+$('k-gars').dataset.n || 1); n++) { var g = leerPersona('k-g' + n); if (g.nombre) c.garantes.push(g); }
   c.notas = val('k-notas');
@@ -2056,7 +2099,7 @@ function detCtrDatos(c){
   return (c.observaciones && c.observaciones.length ? '<div class="alert warn"><div class="ic">!</div><div class="tx"><b>Para revisar (surgió al cargar el contrato)</b><ul class="small" style="margin:4px 0 0;padding-left:18px">' + c.observaciones.map(function(o){ return '<li>' + esc(o) + '</li>'; }).join('') + '</ul></div></div>' : '') +
     '<div class="grid g2">' + persona(c.locatario, 'Locatario') + (c.colocatarios || []).map(function(g){ return persona(g, 'Co-locatario'); }).join('') +
     (c.locadorFormal ? '<div class="card"><h3>Locador según contrato</h3><div>' + esc(c.locadorFormal) + '</div></div>' : '') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
-    '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
+    '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + ' mensual</div><div>Honorarios</div><div>' + (function(){ var h = honorariosContrato(c); return h.monto ? fmt(h.monto) + ' (' + pct(h.pct, 2) + (h.baseTipo === 'total' ? ' del contrato' : ' de un mes') + ', a cargo del ' + h.paga + ', ' + perNom(h.mes) + ')' : '—'; })() + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
     (c.notas ? '<div class="hint" style="margin-top:8px;white-space:pre-wrap">' + esc(c.notas) + '</div>' : '') +
     '<div style="margin-top:12px">' + (estadoContrato(c) === 'vigente' || estadoContrato(c) === 'futuro' ? '<button class="btn sm" onclick="finalizarContrato(\'' + c.id + '\')">Finalizar contrato</button>' : '<button class="btn sm" onclick="reactivarContrato(\'' + c.id + '\')">Reactivar</button>') + '</div></div></div>';
 }
@@ -2575,12 +2618,22 @@ function rendicion(p, socioId, conSaldo){
     else if (m.tipo === 'entre' && m.destinoId === socioId) v = -num(m.monto);
     if (v) R.movs.push({ tipo: 'mov', txt: textoMov(m, socioId), monto: v, mov: m });
   });
+  // honorarios inmobiliarios (única vez) a cargo del locador, en el mes en que se liquidan
+  R.hon = [];
+  vivos('contratos').forEach(function(c){
+    var h = honorariosContrato(c);
+    if (!h.monto || h.paga !== 'locador' || h.mes !== p) return;
+    var d = distribucionInm(byId('inmuebles', c.inmuebleId)).find(function(t){ return t.socioId === socioId; });
+    if (!d || !num(d.pct)) return;
+    R.hon.push({ contrato: c, txt: 'Honorarios inmobiliarios ' + titulo(c.locatario.nombre) + ' (' + pct(h.pct, 2) + (h.baseTipo === 'total' ? ' del contrato' : ' de un mes') + (num(d.pct) < 100 ? ', ' + r2(d.pct) + '%' : '') + ')', monto: h.monto * num(d.pct) / 100 });
+  });
   R.alq.sort(function(a, b){ return a.loc.localeCompare(b.loc); });
   R.totalAlq = sum(R.alq, function(a){ return a.monto; });
   R.com = sum(R.alq, function(a){ return a.com; });
+  R.totalHon = sum(R.hon, function(h){ return h.monto; });
   R.totalGas = sum(R.gastos, function(g){ return g.monto; });
   R.totalMov = sum(R.movs, function(m){ return m.monto; });
-  R.netoMes = R.totalAlq - R.com - R.totalGas + R.totalMov;
+  R.netoMes = R.totalAlq - R.com - R.totalHon - R.totalGas + R.totalMov;
   var desde = DB.config.rendicionDesde;
   if (conSaldo && desde && desde < p) { for (var m = desde; m < p; m = perAdd(m, 1)) R.saldoAnt += rendicion(m, socioId, false).netoMes; }
   R.neto = R.netoMes + R.saldoAnt;
@@ -2599,7 +2652,10 @@ function cajaAdmin(p){
   var sal = sum(ms.filter(function(m){ return m.tipo === 'retiro' || m.tipo === 'transferencia'; }), function(m){ return m.monto; });
   var apo = sum(ms.filter(function(m){ return m.tipo === 'aporte'; }), function(m){ return m.monto; });
   var com = sum(cobrosDelMes(p), function(x){ return x.comision; });
-  return { rec: rec, gas: gas, sal: sal, apo: apo, com: com, saldo: rec - gas - sal + apo - com };
+  // honorarios del mes: los del locador salen de lo que se rinde; los del locatario los cobra la administración aparte
+  var hon = 0, honLoc = 0;
+  vivos('contratos').forEach(function(c){ var h = honorariosContrato(c); if (!h.monto || h.mes !== p) return; if (h.paga === 'locador') hon += h.monto; else honLoc += h.monto; });
+  return { rec: rec, gas: gas, sal: sal, apo: apo, com: com, hon: hon, honLoc: honLoc, saldo: rec - gas - sal + apo - com - hon };
 }
 
 function renderLiquidacion(){
@@ -2616,7 +2672,7 @@ function renderLiquidacion(){
   h += '<div class="kpis">' + Rs.map(function(x){
       return kpi('Neto a cobrar ' + esc(x.s.nombre), '<span class="' + (x.R.neto < -1 ? 'neg-v' : '') + '">' + fmt(x.R.neto) + '</span>', x.R.neto < -1 ? 'tiene de más: debe reintegrar' : 'le debe la administración');
     }).join('') +
-    kpi('Comisión ' + esc(DB.config.administrador || ''), fmt(caja.com), pct(DB.config.comisionPct, 2) + ' de lo cobrado') +
+    kpi('Ingresos ' + esc(DB.config.administrador || 'administración'), fmt(caja.com + caja.hon + caja.honLoc), 'comisión ' + fmt(caja.com) + (caja.hon + caja.honLoc ? ' · honorarios ' + fmt(caja.hon + caja.honLoc) : '')) +
     (esAdmin() ? kpi('Caja administración', fmt(caja.saldo), 'entró ' + fmt(caja.rec + caja.apo) + ' · salió ' + fmt(caja.gas + caja.sal)) : '') +
     kpi('Pendientes de cobro', pend.length, pend.length ? fmt(sum(pend, function(x){ return x.f.debe - x.f.pagado; })) : 'todo cobrado') + '</div>';
   h += '<div class="grid g2">' + Rs.map(function(x){ return htmlRendicion(x.s, x.R, p); }).join('') + '</div>';
@@ -2627,6 +2683,8 @@ function renderLiquidacion(){
     '<div class="row"><span class="muted">− Gastos pagados con la caja</span><span>' + fmt(caja.gas) + '</span></div>' +
     '<div class="row"><span class="muted">− Retiros y transferencias a socios</span><span>' + fmt(caja.sal) + '</span></div>' +
     '<div class="row"><span class="muted">− Comisión ' + esc(DB.config.administrador || '') + '</span><span>' + fmt(caja.com) + '</span></div>' +
+    (caja.hon ? '<div class="row"><span class="muted">− Honorarios inmobiliarios (a cargo de locadores)</span><span>' + fmt(caja.hon) + '</span></div>' : '') +
+    (caja.honLoc ? '<div class="row"><span class="muted">Honorarios cobrados a locatarios (aparte)</span><span>' + fmt(caja.honLoc) + '</span></div>' : '') +
     '<div class="liq-tot"><span>Queda en caja (a rendir)</span><span>' + fmt(caja.saldo) + '</span></div>' +
     '<div class="hint">Debe coincidir con la suma de los “neto a cobrar” del mes de los socios. Si no, falta registrar algún retiro o quién recibió algún cobro.</div>' +
     '<div class="fr" style="margin-top:12px;max-width:420px"><div><label class="l" for="liq-desde">Arrastrar saldos entre meses desde</label><input class="f" type="month" id="liq-desde" value="' + esc(DB.config.rendicionDesde || '') + '" onchange="DB.config.rendicionDesde=this.value;guardarConfig();renderLiquidacion()"></div></div>' +
@@ -2641,7 +2699,8 @@ function htmlRendicion(s, R, p){
       return fila(esc(a.loc) + (a.pct < 100 ? ' <span class="muted small">' + r2(a.pct) + '%</span>' : ''), a.monto, a.recibio.length ? ' <span class="tag t-info" title="Quién recibió el dinero">→ ' + esc(a.recibio.join(', ')) + '</span>' : '', 'modalPago(\'' + a.pago.id + '\')');
     }).join('') : '<div class="hint">Sin cobros en el mes.</div>') +
     '<div class="liq-tot"><span>TOTAL NETO ALQUILERES</span><span>' + fmt(R.totalAlq) + '</span></div>' +
-    fila('Comisión ' + esc(DB.config.administrador || 'administración') + ' ' + pct(DB.config.comisionPct, 2), -R.com) +
+    fila('Comisión ' + esc(DB.config.administrador || 'administración') + (R.totalAlq ? ' ' + pct(R.com / R.totalAlq * 100, 2) : ''), -R.com) +
+    (R.hon.length ? '<div class="liq-sec">Honorarios inmobiliarios (única vez)</div>' + R.hon.map(function(h){ return fila(esc(h.txt), -h.monto, '', 'modalContrato(\'' + h.contrato.id + '\')'); }).join('') : '') +
     (R.gastos.length ? '<div class="liq-sec">Gastos</div>' + R.gastos.map(function(g){ return fila(esc(g.txt), -g.monto, '', 'modalGasto(\'' + g.gasto.id + '\')'); }).join('') : '') +
     (R.movs.length ? '<div class="liq-sec">Retiros / transferencias</div>' + R.movs.map(function(m){
       var oc = m.pago ? 'modalPago(\'' + m.pago.id + '\')' : m.gasto ? 'modalGasto(\'' + m.gasto.id + '\')' : 'modalMovimiento(\'' + m.mov.id + '\')';
@@ -2718,7 +2777,8 @@ function liquidacionTexto(){
   DB.config.socios.filter(function(s){ return VISTA === 'total' || VISTA === s.id; }).forEach(function(s){
     var R = rendicion(p, s.id, true);
     t += '\n*' + s.nombre.toUpperCase() + '*\n' + R.alq.map(function(a){ return '• ' + titulo(a.loc) + ': ' + fmt(a.monto); }).join('\n');
-    t += '\nTotal alquileres: ' + fmt(R.totalAlq) + '\nComisión ' + (DB.config.administrador || '') + ' ' + pct(DB.config.comisionPct, 2) + ': −' + fmt(R.com);
+    t += '\nTotal alquileres: ' + fmt(R.totalAlq) + '\nComisión ' + (DB.config.administrador || '') + (R.totalAlq ? ' ' + pct(R.com / R.totalAlq * 100, 2) : '') + ': −' + fmt(R.com);
+    R.hon.forEach(function(h){ t += '\n' + h.txt + ': −' + fmt(h.monto); });
     R.gastos.forEach(function(g){ t += '\n' + g.txt + ': −' + fmt(g.monto); });
     R.movs.forEach(function(m){ t += '\n' + m.txt + ': ' + (m.monto < 0 ? '−' + fmt(-m.monto) : fmt(m.monto)); });
     if (R.saldoAnt) t += '\nSaldo anterior: ' + fmt(R.saldoAnt);
@@ -2745,7 +2805,8 @@ function liquidacionPDF(){
     sec('ALQUILERES');
     R.alq.forEach(function(a){ ln(titulo(a.loc) + (a.pct < 100 ? ' (' + r2(a.pct) + '%)' : ''), a.monto); });
     doc.setDrawColor(203, 213, 225); doc.line(x0, y - 3, xr, y - 3); ln('TOTAL NETO ALQUILERES', R.totalAlq, true);
-    ln('Comisión ' + (DB.config.administrador || '') + ' ' + pct(DB.config.comisionPct, 2), -R.com);
+    ln('Comisión ' + (DB.config.administrador || '') + (R.totalAlq ? ' ' + pct(R.com / R.totalAlq * 100, 2) : ''), -R.com);
+    R.hon.forEach(function(h){ ln(h.txt, -h.monto); });
     if (R.gastos.length) { sec('GASTOS'); R.gastos.forEach(function(g){ ln(g.txt, -g.monto); }); }
     if (R.movs.length) { sec('RETIROS / TRANSFERENCIAS'); R.movs.forEach(function(m){ ln(m.txt, m.monto); }); }
     if (R.saldoAnt) ln('Saldo de meses anteriores', R.saldoAnt);
@@ -2762,6 +2823,7 @@ function liquidacionExcel(){
     R.alq.forEach(function(a){ filas.push({ Seccion: 'Alquileres', Concepto: a.loc + ' — ' + a.inm, '%': a.pct, Monto: r2(a.monto) }); });
     filas.push({ Seccion: 'Total', Concepto: 'TOTAL NETO ALQUILERES', Monto: r2(R.totalAlq) });
     filas.push({ Seccion: 'Comisión', Concepto: 'Comisión ' + (DB.config.administrador || ''), Monto: -r2(R.com) });
+    R.hon.forEach(function(h){ filas.push({ Seccion: 'Honorarios', Concepto: h.txt, Monto: -r2(h.monto) }); });
     R.gastos.forEach(function(g){ filas.push({ Seccion: 'Gastos', Concepto: g.txt, Monto: -r2(g.monto) }); });
     R.movs.forEach(function(m){ filas.push({ Seccion: 'Retiros/transferencias', Concepto: m.txt, Monto: r2(m.monto) }); });
     if (R.saldoAnt) filas.push({ Seccion: 'Saldo anterior', Concepto: 'Meses anteriores', Monto: r2(R.saldoAnt) });
@@ -2917,12 +2979,12 @@ function compartirConDuenos(driveId, col, obj){
     }));
   }).catch(function(e){ console.warn('compartir', e); });
 }
-function subirArchivos(col, id, files, cat){
+function subirArchivos(col, id, files, cat, opts){
   var obj = byId(col, id); if (!obj || !files.length) return;
   if (conFirebase() && !AUTH_TOKEN && !tokenGuardado()) { conDrive(function(){ subirArchivos(col, id, files, cat); }); return; }
   var carpeta = col === 'inmuebles' ? obj.nombre : col === 'contratos' ? 'Contrato ' + obj.locatario.nombre : 'Comprobantes de gastos';
   toast('Subiendo ' + files.length + ' archivo(s)…', 60000);
-  files.reduce(function(acc, f){
+  return files.reduce(function(acc, f){
     return acc.then(function(){
       var d = { id: uid(), nombre: f.name, tipo: f.type, size: f.size, fecha: hoy(), cat: cat };
       var p = AUTH_TOKEN ? driveSubir(f, carpeta).then(function(r){ d.driveId = r.id; d.url = r.webViewLink; return compartirConDuenos(r.id, col, obj); })
@@ -2930,7 +2992,8 @@ function subirArchivos(col, id, files, cat){
       return p.then(function(){ obj.docs = (obj.docs || []).concat([d]); });
     });
   }, Promise.resolve()).then(function(){
-    guardar(col, obj); toast('Archivos guardados');
+    guardar(col, obj); if (!(opts && opts.silencioso)) toast('Archivos guardados');
+    if (opts && opts.silencioso) return true;
     if (col === 'gastos') modalGasto(id); else renderTodo();
   }).catch(function(e){ console.error(e); toast('Error al subir: ' + e.message, 5000); });
 }
@@ -2993,7 +3056,7 @@ function renderAjustes(){
     '<div class="card"><h3>Notificaciones</h3><p class="small">InmoFlow te avisa al abrirla cuando hay ajustes, deudas o contratos por vencer.</p>' +
       ('Notification' in window ? (Notification.permission === 'granted' ? '<span class="tag t-ok">Activadas</span>' : '<button class="btn" onclick="Notification.requestPermission().then(function(){renderAjustes();notificarSiCorresponde()})">Activar notificaciones</button>') : '') + '</div>' +
     '<div class="card"><h3>Importar planilla de alquileres</h3><p class="small">Descargá la planilla de Google Sheets como Excel (Archivo → Descargar → .xlsx) y elegila. Se crean los contratos con su historial de cobros mes a mes y el próximo reajuste. Se pueden reimportar meses nuevos sin duplicar.</p><button class="btn p" onclick="elegirPlanilla()">Elegir .xlsx</button></div>' +
-    '<div class="card"><h3>Importar contratos vigentes</h3><p class="small">Archivo <b>.json</b> con los datos de los contratos firmados (partes, garantes, inmueble, vigencia, precio e índice). Completa los contratos que vienen de la planilla sin perder sus cobros y crea los demás. Se puede importar antes o después de la planilla.</p><button class="btn p" onclick="elegirContratosJSON()">Elegir .json</button></div>' +
+    '<div class="card"><h3>Importar contratos vigentes</h3><p class="small">Archivo <b>.json</b> con los datos de los contratos firmados (partes, garantes, inmueble, vigencia, precio e índice). Completa los contratos que vienen de la planilla sin perder sus cobros y crea los demás. Se puede importar antes o después de la planilla.</p><button class="btn p" onclick="elegirContratosJSON()">Elegir .json</button> <button class="btn" onclick="elegirArchivosContratos()">Adjuntar los .docx firmados</button><div class="hint" style="margin-top:6px">Elegí todos los archivos de la carpeta de contratos juntos: cada uno se adjunta a su contrato por el nombre.</div></div>' +
     '<div class="card"><h3>Backup</h3><p class="small">Copia completa de los datos (sin los archivos, que quedan en Drive).</p><button class="btn" onclick="exportarBackup()">Descargar backup</button> <button class="btn" onclick="importarBackup()">Restaurar backup</button> <button class="btn" onclick="exportarExcel(\'todo\')">Exportar a Excel</button></div>' +
     '<div class="card"><h3>Categorías de gastos</h3><textarea class="f" id="s-cats" style="min-height:150px">' + esc(cfg.categoriasGasto.join('\n')) + '</textarea><button class="btn sm" style="margin-top:8px" onclick="DB.config.categoriasGasto=val(\'s-cats\').split(\'\\n\').map(function(s){return s.trim()}).filter(Boolean);guardarConfig();toast(\'Categorías guardadas\')">Guardar</button></div>' +
     '<div class="card" style="grid-column:1/-1"><h3>Plantillas de mensajes</h3><p class="hint">Variables: {locatario} {garante} {inmueble} {periodo} {monto} {vencimiento} {montoAnterior} {montoNuevo} {desde} {indice} {deuda} {detalleDeuda} {fin} {ultimoPago} {ultimoPeriodo} {firma}</p>' +
@@ -3202,7 +3265,7 @@ function init(){
     if (FB_SES && u && u.email === FB_SES.email) {
       USUARIO = u; if (u.rol !== 'admin') VISTA = u.socioId;
       ir(PAGINA); setSync('busy', 'Conectando…');
-      fbCargarPerfil().then(function(){ return sincronizar(true); }).then(renderTodo).catch(function(e){ mostrarLogin(e.message); });
+      fbCargarPerfil().then(function(){ return sincronizar(true); }).then(provisionarUsuariosIniciales).then(renderTodo).catch(function(e){ mostrarLogin(e.message); });
     } else { ir(PAGINA); mostrarLogin(); }
   } else ir(PAGINA);
   if (conFirebase()) {}
@@ -3405,6 +3468,43 @@ function ejecutarImportContratos(d){
   cerrarModal(); renderTodo();
   toast('Listo: ' + n.ctrN + ' contratos nuevos, ' + n.ctrA + ' completados, ' + n.inmN + ' inmuebles nuevos, ' + n.socios + ' locadores nuevos', 6000);
   return n;
+}
+
+// ─── adjuntar en lote los archivos de los contratos firmados ───
+// Se eligen todos los .docx/.pdf juntos; cada uno se asocia a su contrato por el nombre del archivo.
+function normArchivo(n){ return sinAcentos(String(n || '')).toLowerCase().replace(/\.(docx?|pdf)$/i, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function elegirArchivosContratos(){
+  var fi = $('fileIn'); fi.multiple = true; fi.accept = '.doc,.docx,.pdf';
+  fi.onchange = function(){
+    var files = Array.prototype.slice.call(fi.files); fi.value = ''; if (!files.length) return;
+    var ctrs = vivos('contratos').filter(function(c){ return c.archivoContrato; });
+    var asign = [], sin = [];
+    files.forEach(function(f){
+      var c = ctrs.filter(function(x){ return normArchivo(x.archivoContrato) === normArchivo(f.name); })[0];
+      if (!c) { sin.push(f.name); return; }
+      if ((c.docs || []).some(function(d){ return normArchivo(d.nombre) === normArchivo(f.name); })) { sin.push(f.name + ' (ya estaba adjunto)'); return; }
+      asign.push({ c: c, f: f });
+    });
+    abrirModal('Adjuntar contratos firmados',
+      '<p><b>' + asign.length + '</b> archivo(s) se van a adjuntar a su contrato' + (AUTH_TOKEN || conFirebase() ? ' y guardar en Google Drive (carpeta InmoFlow), compartidos solo-lectura con el dueño si tiene usuario.' : ' (sin Google: quedan solo en este dispositivo).') + '</p>' +
+      (asign.length ? '<div class="tw" style="max-height:240px;overflow:auto"><table><tbody>' + asign.map(function(a){ return '<tr><td class="small">' + esc(a.f.name) + '</td><td class="small">→ ' + esc(etiquetaContrato(a.c)) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+      (sin.length ? '<div class="hint" style="margin-top:8px">No se adjuntan: ' + sin.map(esc).join(', ') + '</div>' : '') +
+      '<div class="hint" id="adj-prog" style="margin-top:8px"></div>',
+      '<button class="btn" onclick="cerrarModal()">Cancelar</button>' + (asign.length ? '<button class="btn p" id="btn-adj">Adjuntar ' + asign.length + '</button>' : ''));
+    if (asign.length) $('btn-adj').onclick = function(){
+      var go = function(){
+        $('btn-adj').disabled = true; var ok = 0;
+        asign.reduce(function(acc, a, k){
+          return acc.then(function(){
+            $('adj-prog').textContent = 'Subiendo ' + (k + 1) + ' de ' + asign.length + ': ' + a.f.name;
+            return subirArchivos('contratos', a.c.id, [a.f], 'Contrato', { silencioso: true }).then(function(r){ if (r) ok++; });
+          });
+        }, Promise.resolve()).then(function(){ cerrarModal(); renderTodo(); toast(ok + ' de ' + asign.length + ' contratos adjuntados', 5000); });
+      };
+      if (conFirebase() && !AUTH_TOKEN && !tokenGuardado()) conDrive(go); else go();
+    };
+  };
+  fi.click();
 }
 </script>
 </body>

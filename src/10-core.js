@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════
 // InmoFlow — núcleo: utilidades, base de datos local y sincronización
 // ═══════════════════════════════════════════
-var APP_VERSION = '2026-10-22-1';
+var APP_VERSION = '2026-10-22-2';
 var OAUTH_CLIENT_ID = '485000953207-g3r6kjptl4dvoc8p0u1aj20nket5mdrm.apps.googleusercontent.com';
 var PROJECT_ID = 'costo-de-obras';
 var FS_BASE = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID + '/databases/(default)/documents';

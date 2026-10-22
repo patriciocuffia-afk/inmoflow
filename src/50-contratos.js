@@ -53,9 +53,16 @@ function modalContrato(id, inmId){
     '<div class="fr">' + sel('k-inm', 'Inmueble *', [['', '— elegir —']].concat(inms.map(function(i){ return [i.id, i.nombre]; })), c.inmuebleId) + sel('k-dest', 'Destino', ['Vivienda', 'Comercial', 'Cochera', 'Temporario', 'Otro'], c.destino) + '</div>' +
     '<div class="fr">' + inp('k-ini', 'Inicio *', c.inicio, 'date', 'onchange="ctrFin()"') + inp('k-dur', 'Duración (meses)', dur, 'number', 'oninput="ctrFin()"') + inp('k-fin', 'Fin', c.fin, 'date') + '</div>' +
     '<div class="fsec">Monto y actualización</div>' +
-    '<div class="fr">' + inp('k-monto', 'Monto inicial mensual *', monto0, 'number', 'step="0.01"') + sel('k-idx', 'Índice de actualización', Object.keys(INDICES).map(function(k){ return [k, INDICES[k]]; }), c.indice, 'onchange="ctrIdx()"') + inp('k-per', 'Cada (meses)', c.periodicidad, 'number', 'min="0"') + '</div>' +
+    '<div class="fr">' + inp('k-monto', 'Monto inicial mensual *', monto0, 'number', 'step="0.01" oninput="ctrHon()"') + sel('k-idx', 'Índice de actualización', Object.keys(INDICES).map(function(k){ return [k, INDICES[k]]; }), c.indice, 'onchange="ctrIdx()"') + inp('k-per', 'Cada (meses)', c.periodicidad, 'number', 'min="0"') + '</div>' +
     '<div class="fr">' + inp('k-pfijo', '% fijo por ajuste', c.pctFijo, 'number', 'step="0.01"') + inp('k-prim', 'Primer ajuste (si no es inicio + período)', c.primerAjuste, 'month') + sel('k-desf', 'IPC: meses de desfase', [['0', 'Sin desfase'], ['1', '1 mes (habitual)'], ['2', '2 meses']], c.ipcDesfase == null ? 1 : c.ipcDesfase) + '</div>' +
-    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + inp('k-com', 'Comisión administrador % (vacío = general ' + DB.config.comisionPct + '%)', c.comisionPct, 'number', 'step="0.01"') + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + inp('k-ccd', 'Llevar la cuenta desde', c.ccDesde || '', 'month', 'title="Los meses anteriores no figuran como deuda"') + '</div>' +
+    '<div class="fr">' + inp('k-venc', 'Día de vencimiento del pago', c.diaVencimiento, 'number', 'min="1" max="28"') + inp('k-pun', 'Punitorio diario % (vacío = general)', c.punitorioPct, 'number', 'step="0.01"') + '<input type="hidden" id="k-com" value="' + esc(c.comisionPct == null ? '' : c.comisionPct) + '">' + inp('k-dep', 'Depósito en garantía', c.deposito, 'number') + inp('k-ccd', 'Llevar la cuenta desde', c.ccDesde || '', 'month', 'title="Los meses anteriores no figuran como deuda"') + '</div>' +
+    '<div class="fsec">Comisión y honorarios de la administración</div>' +
+    '<div class="fr">' + inp('k-com2', 'Comisión mensual por administración %', c.comisionPct, 'number', 'step="0.01" placeholder="vacío = general ' + DB.config.comisionPct + '%" oninput="$(\'k-com\').value=this.value"') +
+      inp('k-hpct', 'Honorarios inmobiliarios % (única vez)', c.honorariosPct, 'number', 'step="0.01" oninput="ctrHon()"') +
+      sel('k-hbase', 'Calculados sobre', [['total', 'El valor total del contrato'], ['mes', 'Un mes de alquiler']], c.honorariosBase || 'total', 'onchange="ctrHon()"') + '</div>' +
+    '<div class="fr">' + sel('k-hpaga', 'Los paga', [['locador', 'El locador (se descuenta en su liquidación)'], ['locatario', 'El locatario (los cobra la administración)']], c.honorariosPaga || 'locador', 'onchange="ctrHon()"') +
+      inp('k-hmes', 'Se liquidan en el mes', c.honorariosMes || (c.inicio ? per(c.inicio) : ''), 'month', 'onchange="ctrHon()"') + '</div>' +
+    '<div class="calc small" id="k-hcalc"></div>' +
     '<div class="fsec">Locatario</div>' + htmlPersona('k-loc', c.locatario, 'Locatario') +
     '<div class="fsec">Garantes</div><div id="k-gars">' + c.garantes.map(function(g, n){ return htmlPersona('k-g' + n, g, 'Garante ' + (n + 1)); }).join('') + '</div>' +
     '<button class="btn sm" onclick="ctrAddGarante()">+ Otro garante</button>' +
@@ -63,10 +70,17 @@ function modalContrato(id, inmId){
     (id ? '<button class="btn d" onclick="eliminarContrato(\'' + id + '\')">Eliminar</button><span style="flex:1"></span>' : '') +
     '<button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="guardarContrato(\'' + (id || '') + '\')">Guardar</button>', true);
   if (!c.fin) ctrFin();
-  ctrIdx();
+  ctrIdx(); ctrHon();
   $('k-gars').dataset.n = c.garantes.length;
 }
-function ctrFin(){ var i = val('k-ini'), d = num(val('k-dur')); if (i && d) { var d2 = new Date(i + 'T12:00'); d2.setMonth(d2.getMonth() + d); d2.setDate(d2.getDate() - 1); $('k-fin').value = d2.toISOString().slice(0, 10); } }
+function ctrFin(){ setTimeout(ctrHon); var i = val('k-ini'), d = num(val('k-dur')); if (i && d) { var d2 = new Date(i + 'T12:00'); d2.setMonth(d2.getMonth() + d); d2.setDate(d2.getDate() - 1); $('k-fin').value = d2.toISOString().slice(0, 10); } }
+function ctrHon(){
+  var el = $('k-hcalc'); if (!el) return;
+  var h = honorariosContrato({ honorariosPct: num(val('k-hpct')), honorariosBase: val('k-hbase'), honorariosPaga: val('k-hpaga'), honorariosMes: val('k-hmes'),
+    inicio: val('k-ini'), fin: val('k-fin'), montos: [{ desde: per(val('k-ini') || hoy()), monto: num(val('k-monto')) }] });
+  el.innerHTML = h.monto ? 'Honorarios: <b>' + fmt(h.monto) + '</b> (' + pct(h.pct, 2) + ' de ' + fmt(h.base) + (h.baseTipo === 'total' ? ' = ' + h.meses + ' meses × ' + fmt(h.mensual) : '') + '), a cargo del ' + h.paga + ', en la liquidación de ' + perNom(h.mes) + '.'
+    : 'Sin honorarios inmobiliarios para este contrato.';
+}
 function ctrIdx(){ var x = val('k-idx'); $('k-pfijo').parentNode.style.display = x === 'FIJO' ? '' : 'none'; $('k-desf').parentNode.style.display = x === 'IPC' ? '' : 'none'; }
 function ctrAddGarante(){ var g = $('k-gars'), n = +g.dataset.n || 1; g.insertAdjacentHTML('beforeend', htmlPersona('k-g' + n, {}, 'Garante ' + (n + 1))); g.dataset.n = n + 1; }
 function guardarContrato(id){
@@ -75,7 +89,7 @@ function guardarContrato(id){
   c.inicio = val('k-ini'); c.fin = val('k-fin'); if (!c.inicio) { toast('Falta la fecha de inicio'); return; }
   c.destino = val('k-dest'); c.indice = val('k-idx'); c.periodicidad = num(val('k-per')); c.pctFijo = num(val('k-pfijo'));
   c.primerAjuste = val('k-prim') || ''; c.ipcDesfase = num(val('k-desf'));
-  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com'); c.deposito = num(val('k-dep')); c.ccDesde = val('k-ccd') || '';
+  c.diaVencimiento = num(val('k-venc')) || DB.config.diaVencimiento; c.punitorioPct = val('k-pun'); c.comisionPct = val('k-com2'); c.honorariosPct = num(val('k-hpct')); c.honorariosBase = val('k-hbase'); c.honorariosPaga = val('k-hpaga'); c.honorariosMes = val('k-hmes') || per(val('k-ini')); c.deposito = num(val('k-dep')); c.ccDesde = val('k-ccd') || '';
   c.locatario = leerPersona('k-loc'); if (!c.locatario.nombre) { toast('Falta el nombre del locatario'); return; }
   c.garantes = []; for (var n = 0; n < (+$('k-gars').dataset.n || 1); n++) { var g = leerPersona('k-g' + n); if (g.nombre) c.garantes.push(g); }
   c.notas = val('k-notas');
@@ -175,7 +189,7 @@ function detCtrDatos(c){
   return (c.observaciones && c.observaciones.length ? '<div class="alert warn"><div class="ic">!</div><div class="tx"><b>Para revisar (surgió al cargar el contrato)</b><ul class="small" style="margin:4px 0 0;padding-left:18px">' + c.observaciones.map(function(o){ return '<li>' + esc(o) + '</li>'; }).join('') + '</ul></div></div>' : '') +
     '<div class="grid g2">' + persona(c.locatario, 'Locatario') + (c.colocatarios || []).map(function(g){ return persona(g, 'Co-locatario'); }).join('') +
     (c.locadorFormal ? '<div class="card"><h3>Locador según contrato</h3><div>' + esc(c.locadorFormal) + '</div></div>' : '') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
-    '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
+    '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + ' mensual</div><div>Honorarios</div><div>' + (function(){ var h = honorariosContrato(c); return h.monto ? fmt(h.monto) + ' (' + pct(h.pct, 2) + (h.baseTipo === 'total' ? ' del contrato' : ' de un mes') + ', a cargo del ' + h.paga + ', ' + perNom(h.mes) + ')' : '—'; })() + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
     (c.notas ? '<div class="hint" style="margin-top:8px;white-space:pre-wrap">' + esc(c.notas) + '</div>' : '') +
     '<div style="margin-top:12px">' + (estadoContrato(c) === 'vigente' || estadoContrato(c) === 'futuro' ? '<button class="btn sm" onclick="finalizarContrato(\'' + c.id + '\')">Finalizar contrato</button>' : '<button class="btn sm" onclick="reactivarContrato(\'' + c.id + '\')">Reactivar</button>') + '</div></div></div>';
 }
