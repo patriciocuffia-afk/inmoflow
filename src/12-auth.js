@@ -67,12 +67,22 @@ function fbCargarPerfil(){
 // Usuarios que se dan de alta solos la primera vez que entra un administrador (una sola vez:
 // si después se les quita el acceso desde Ajustes, no vuelven a crearse).
 var USUARIOS_INICIALES = [
-  { email: 'antofalco08@hotmail.com', nombre: 'Antonella', rol: 'admin', socioId: '' }
+  { email: 'antofalco08@gmail.com', nombre: 'Antonella', rol: 'admin', socioId: '' }
 ];
+// Altas iniciales equivocadas que se quitan una sola vez (Antonella no tenía cuenta de Google con Hotmail).
+var USUARIOS_RETIRAR = ['antofalco08@hotmail.com'];
 function provisionarUsuariosIniciales(){
   if (!conFirebase() || !esAdmin()) return Promise.resolve();
   var hechos = DB.config.usuariosProvisionados || [];
   var pend = USUARIOS_INICIALES.filter(function(u){ return hechos.indexOf(u.email) < 0; });
+  var retirar = USUARIOS_RETIRAR.filter(function(e){ return (DB.config.usuariosRetirados || []).indexOf(e) < 0; });
+  var p = retirar.reduce(function(acc, e){
+    return acc.then(function(){
+      return fsGetDoc('usuarios', e).then(function(ex){
+        if (ex) return fsDelUsuario(e).then(function(){ auditoriaManual('baja', 'usuarios', e, 'Se quitó el acceso a ' + e + ' (reemplazado por su cuenta de Gmail)'); });
+      }).then(function(){ DB.config.usuariosRetirados = (DB.config.usuariosRetirados || []).concat([e]); guardarConfig(); });
+    });
+  }, Promise.resolve());
   return pend.reduce(function(acc, u){
     return acc.then(function(){
       return fsGetDoc('usuarios', u.email).then(function(ex){
@@ -80,7 +90,7 @@ function provisionarUsuariosIniciales(){
         return fsPutUsuario(u).then(function(){ auditoriaManual('alta', 'usuarios', u.email, u.email + ' → administrador (alta inicial)'); toast(u.nombre + ' ya puede ingresar como administradora'); });
       }).then(function(){ DB.config.usuariosProvisionados = (DB.config.usuariosProvisionados || []).concat([u.email]); guardarConfig(); });
     });
-  }, Promise.resolve()).catch(function(e){ console.warn('alta inicial', e); });
+  }, p).catch(function(e){ console.warn('alta inicial', e); });
 }
 
 // ─── pantalla de ingreso ─────────────────────
