@@ -7,6 +7,16 @@
 | **Patricio** (administrador) | Con su cuenta de Google | Ve y carga todo. |
 | **Antonella** (administradora) | Con su cuenta de Google | Ve y carga todo. |
 | **Benjamín** y cualquier otro dueño | Con su cuenta de Google, desde el celular o la computadora | **Solo ve** sus inmuebles (propios y en condominio): cobros, recibos, gastos, liquidación, rentabilidad y documentos. No puede cargar ni modificar nada. |
+| **Locatarios** | Con su cuenta de Google | **Solo ven su alquiler**: monto, próxima actualización, pagos, recibos, su contrato y documentos. No ven datos del dueño, costos ni gastos. |
+
+Todos (dueños y locatarios) tienen además **su propio chat privado con la administración**: lo leen solo esa persona y los administradores.
+
+## Chat con la administración (desde la versión 2026-10-26)
+
+- Cada locatario y cada dueño tiene su conversación en la pestaña *Mensajes*. Nadie puede leer la de otro: lo impiden las reglas del servidor (`inmoflow_mensajes`, campo `hilo`).
+- Con la app abierta, se buscan mensajes nuevos cada 20 segundos y se avisa con un cartel, o con una notificación si la app quedó en segundo plano. Todavía no hay avisos con la app cerrada (push).
+- Para que alguien use el chat tiene que tener usuario. Se da de alta en *Ajustes → Usuarios y permisos*, o desde el contrato: *Partes y datos → Dar acceso a la app al locatario*.
+- Dueños y locatarios leen solo la configuración pública (`inmoflow_config/publico`): administrador, datos para pagar, comisión general y nombres de los socios. La configuración completa solo la leen los administradores.
 
 - **El permiso lo aplica el servidor, no la pantalla.** Las reglas de Firestore (`firestore.rules`) solo le entregan a cada dueño los documentos donde figura en `visiblePara`. Ese campo lo calcula la app según la titularidad de cada inmueble. Aunque alguien manipule la app, la base no le devuelve datos ajenos.
 - **Quién hizo cada cosa.** Cada registro guarda quién lo cargó y quién lo modificó por última vez, con fecha y hora; se ve al pie de cada formulario. Además, *Ajustes → Actividad* muestra el historial completo: alta, modificación o baja, de qué, y qué campos cambiaron. Ese historial no se puede editar ni borrar: las reglas solo permiten agregar.

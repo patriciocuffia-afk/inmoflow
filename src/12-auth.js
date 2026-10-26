@@ -9,14 +9,25 @@ var FB = { apiKey: 'AIzaSyByP5f-8_10KNfjpELDldNMAuiqI9-Lgbs', projectId: 'inmofl
 // ?local=1 en la dirección: modo de prueba sin servidor (solo para desarrollo en esta PC)
 if (/[?&]local=1\b/.test(location.search)) FB = { apiKey: '', projectId: '' };
 var SUPERADMIN = 'patriciocuffia@gmail.com';     // siempre administrador (también está fijo en las reglas)
-var ROLES = { admin: 'Administrador (acceso completo)', dueno: 'Dueño (solo lectura de sus inmuebles)' };
+var ROLES = { admin: 'Administrador (acceso completo)', dueno: 'Dueño (solo lectura de sus inmuebles)', locatario: 'Locatario (ve solo su alquiler)' };
 
-// USUARIO = { email, nombre, rol: 'admin'|'dueno', socioId }
+// USUARIO = { email, nombre, rol: 'admin'|'dueno'|'locatario', socioId, contratoId }
+// SIMULAR = socioId (ver como dueño) o 'loc:<contratoId>' (ver como locatario), solo en pantalla
 var USUARIO = null, FB_SES = null, SIMULAR = null;
 function conFirebase(){ return !!(FB.apiKey && FB.projectId); }
 function esAdmin(){ return !SIMULAR && (!conFirebase() || (USUARIO && USUARIO.rol === 'admin')); }
 function soloLectura(){ return !!SIMULAR || (conFirebase() && USUARIO && USUARIO.rol !== 'admin'); }
-function socioDelUsuario(){ return SIMULAR || (USUARIO && USUARIO.socioId) || null; }
+function esLocatario(){ return SIMULAR ? SIMULAR.indexOf('loc:') === 0 : !!(conFirebase() && USUARIO && USUARIO.rol === 'locatario'); }
+function contratoDelUsuario(){ return SIMULAR && SIMULAR.indexOf('loc:') === 0 ? SIMULAR.slice(4) : (USUARIO && USUARIO.rol === 'locatario' ? USUARIO.contratoId : null); }
+function socioDelUsuario(){ if (SIMULAR) return SIMULAR.indexOf('loc:') === 0 ? null : SIMULAR; return (USUARIO && USUARIO.rol === 'dueno' && USUARIO.socioId) || null; }
+// Clave con la que el servidor decide qué puede leer (ver firestore.rules): el socio o 'loc:<contrato>'
+function claveDe(u){ return u.rol === 'locatario' ? (u.contratoId ? 'loc:' + u.contratoId : '') : (u.socioId || ''); }
+function claveUsuario(){ return SIMULAR || (USUARIO ? claveDe(USUARIO) : ''); }
+function nombreClave(k){
+  if (!k) return '';
+  if (k.indexOf('loc:') === 0) { var c = byId('contratos', k.slice(4)); return c ? c.locatario.nombre : 'Locatario'; }
+  return nombreSocio(k);
+}
 function quienSoy(){ return USUARIO ? (USUARIO.nombre || USUARIO.email) : (DB.config.usuarioLocal || 'Local'); }
 function emailYo(){ return USUARIO ? USUARIO.email : 'local'; }
 
@@ -56,10 +67,11 @@ function fbCargarPerfil(){
       if (email === SUPERADMIN) return fsPutUsuario({ email: email, nombre: FB_SES.nombre || 'Patricio Cuffia', rol: 'admin', socioId: 'patricio' }).then(function(u){ return u; });
       throw new Error('La cuenta ' + email + ' no está habilitada en InmoFlow. Pedile acceso a un administrador.');
     }
-    return { email: email, nombre: f.nombre || FB_SES.nombre, rol: f.rol, socioId: f.socioId || '' };
+    return { email: email, nombre: f.nombre || FB_SES.nombre, rol: f.rol, socioId: f.socioId || '', contratoId: f.contratoId || '' };
   }).then(function(u){
     USUARIO = u; localStorage.setItem('inmoflow_usuario', JSON.stringify(u));
-    if (u.rol !== 'admin' && u.socioId) { VISTA = u.socioId; }
+    if (u.rol === 'dueno' && u.socioId) { VISTA = u.socioId; }
+    if (u.rol === 'locatario') { VISTA = 'total'; PAGINA = 'mialquiler'; }
     return u;
   });
 }
@@ -73,6 +85,12 @@ var USUARIOS_INICIALES = [
 var USUARIOS_RETIRAR = ['antofalco08@hotmail.com'];
 function provisionarUsuariosIniciales(){
   if (!conFirebase() || !esAdmin()) return Promise.resolve();
+  // Una sola vez: volver a subir todo con las claves de locatario (visiblePara 'loc:…') y la configuración pública.
+  if (!DB.config.visibilidadV2) {
+    COLS.forEach(function(c){ DB[c].forEach(function(o){ PENDIENTES[c + '/' + o.id] = true; }); });
+    DB.config.visibilidadV2 = true; guardarConfig();
+    toast('Actualizando permisos de acceso en el servidor…', 4000);
+  }
   var hechos = DB.config.usuariosProvisionados || [];
   var pend = USUARIOS_INICIALES.filter(function(u){ return hechos.indexOf(u.email) < 0; });
   var retirar = USUARIOS_RETIRAR.filter(function(e){ return (DB.config.usuariosRetirados || []).indexOf(e) < 0; });
@@ -131,7 +149,7 @@ function salir(){
 // Si en este dispositivo entra otra persona, no debe quedar la copia de datos del anterior.
 function DB_LIMPIAR_SI_OTRO_USUARIO(){
   var prev = localStorage.getItem('inmoflow_ultimo_email');
-  if (prev && prev !== USUARIO.email) { COLS.forEach(function(c){ DB[c] = []; }); DB.auditoria = []; PENDIENTES = {}; guardarLocal(); }
+  if (prev && prev !== USUARIO.email) { COLS.forEach(function(c){ DB[c] = []; }); DB.auditoria = []; DB.mensajes = []; PENDIENTES = {}; try { localStorage.removeItem('inmoflow_leidos'); } catch (e) {} guardarLocal(); }
   localStorage.setItem('inmoflow_ultimo_email', USUARIO.email);
 }
 
@@ -142,11 +160,11 @@ function visiblePara(col, o){
   function add(id){ if (id) s[id] = true; }
   function deInm(id){ var i = byId('inmuebles', id); (i ? distribucionInm(i) : []).forEach(function(t){ add(t.socioId); }); }
   if (col === 'inmuebles') distribucionInm(o).forEach(function(t){ add(t.socioId); });
-  else if (col === 'contratos') deInm(o.inmuebleId);
-  else if (col === 'pagos') { (o.distribucion || []).forEach(function(t){ add(t.socioId); }); (o.recibio || []).forEach(function(r){ if (r.quien !== 'admin') add(r.quien); }); if (!o.distribucion) deInm(o.inmuebleId); }
+  else if (col === 'contratos') { deInm(o.inmuebleId); add('loc:' + o.id); }
+  else if (col === 'pagos') { add('loc:' + o.contratoId); (o.distribucion || []).forEach(function(t){ add(t.socioId); }); (o.recibio || []).forEach(function(r){ if (r.quien !== 'admin') add(r.quien); }); if (!o.distribucion) deInm(o.inmuebleId); }
   else if (col === 'gastos') { (o.distribucion || []).forEach(function(t){ add(t.socioId); }); if (String(o.pagadoPor).indexOf('socio:') === 0) add(o.pagadoPor.slice(6)); if (!o.distribucion) deInm(o.inmuebleId); }
   else if (col === 'movimientos') { add(o.socioId); add(o.destinoId); }
-  else if (col === 'comunicaciones') { var c = byId('contratos', o.contratoId); if (c) deInm(c.inmuebleId); }
+  else if (col === 'comunicaciones') { add('loc:' + o.contratoId); var c = byId('contratos', o.contratoId); if (c) deInm(c.inmuebleId); }
   return Object.keys(s);
 }
 
@@ -185,7 +203,7 @@ function fechaHora(iso){ var d = new Date(iso); return isNaN(d) ? '' : fDate(iso
 
 // ─── modo solo lectura en la interfaz ────────
 // Las reglas del servidor ya impiden escribir; esto evita que el dueño vea botones que no puede usar.
-var RX_ESCRITURA = /^(modal(Inmueble|Contrato|Gasto|Costo|Movimiento|Ajuste)\(|modalPago\(null|modalPago\(\)|guardar|eliminar|borrar|finalizar|reactivar|agregarSocio|elegir|importar|setRecibio|setMedio|quitarDoc|reciboOtroConcepto|aplicarAjuste|DB\.config|modalMensaje|registrarMasivo|modalUsuario|subirArchivos|ctrAdd)/;
+var RX_ESCRITURA = /^(darAcceso|nuevaConversacion|modal(Inmueble|Contrato|Gasto|Costo|Movimiento|Ajuste)\(|modalPago\(null|modalPago\(\)|guardar|eliminar|borrar|finalizar|reactivar|agregarSocio|elegir|importar|setRecibio|setMedio|quitarDoc|reciboOtroConcepto|aplicarAjuste|DB\.config|modalMensaje|registrarMasivo|modalUsuario|subirArchivos|ctrAdd)/;
 function aplicarSoloLectura(root){
   if (!soloLectura() || !root) return;
   root.querySelectorAll('[onclick]').forEach(function(el){
@@ -207,8 +225,9 @@ function aplicarSoloLecturaModal(){
 // ─── simular la vista de un dueño (solo administradores, solo en pantalla) ───
 function simularDueno(socioId){
   SIMULAR = socioId || null;
-  VISTA = socioId || 'total';
+  var loc = SIMULAR && SIMULAR.indexOf('loc:') === 0;
+  VISTA = SIMULAR && !loc ? SIMULAR : 'total';
   document.body.classList.toggle('simulando', !!SIMULAR);
-  ir(SIMULAR ? 'panel' : 'ajustes');
-  if (SIMULAR) toast('Viendo como ' + nombreSocio(socioId) + ' (solo lectura). Tocá la barra de arriba para volver.', 5000);
+  ir(!SIMULAR ? 'ajustes' : loc ? 'mialquiler' : 'panel');
+  if (SIMULAR) toast('Viendo como ' + nombreClave(SIMULAR) + ' (solo lectura). Tocá la barra de arriba para volver.', 5000);
 }

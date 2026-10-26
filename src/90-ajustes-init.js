@@ -19,6 +19,7 @@ function renderAjustes(){
       '<div class="fr">' + inp('s-adm', 'Nombre del administrador', cfg.administrador) + inp('s-pv', 'Punto de venta', cfg.reciboPuntoVenta) + inp('s-nro', 'Próximo N° de recibo', cfg.reciboNro, 'number') + '</div>' +
       '<div class="fr">' + inp('s-com', 'Comisión administrador %', cfg.comisionPct, 'number', 'step="0.01"') + sel('s-comb', 'Se calcula sobre', [['alquiler', 'Solo el alquiler'], ['total', 'Alquiler + punitorios + ingresos']], cfg.comisionBase) + '</div>' +
       '<div class="fr">' + inp('s-pun', 'Punitorio diario %', cfg.punitorioDiarioPct, 'number', 'step="0.01"') + inp('s-dv', 'Día de vencimiento', cfg.diaVencimiento, 'number') + inp('s-avaj', 'Avisar ajustes con (días)', cfg.avisoAjusteDias, 'number') + inp('s-avve', 'Avisar fin de contrato con (días)', cfg.avisoVencimientoDias, 'number') + '</div>' +
+      '<div class="fr">' + txa('s-pago', 'Datos para pagar (los ven los locatarios): alias, CBU, titular', cfg.datosPago) + '</div><div class="fr">' + inp('s-tel', 'Teléfono de la administración', cfg.telAdministracion, 'tel') + '</div>' +
       '<button class="btn p" onclick="guardarAjustes()">Guardar</button></div>' +
     '<div class="card"><h3>Socios / copropietarios</h3><div id="s-socios">' + cfg.socios.map(function(s, k){ return '<div class="lines"><div class="ln" style="grid-template-columns:1fr 32px"><input class="f" value="' + esc(s.nombre) + '" onchange="DB.config.socios[' + k + '].nombre=this.value;guardarConfig();renderTabs()"><span></span></div></div>'; }).join('') + '</div>' +
       '<button class="btn sm" onclick="agregarSocio()">+ Socio</button><div class="hint" style="margin-top:8px">El porcentaje de cada uno se define en cada inmueble. Con el selector “Vista” de arriba ves todo como lo ve cada socio.</div></div>' +
@@ -41,6 +42,7 @@ function guardarAjustes(){
   var c = DB.config;
   c.emisor = val('s-emisor'); c.emisorDatos = val('s-emdat'); c.administrador = val('s-adm'); c.reciboPuntoVenta = val('s-pv') || '0001'; c.reciboNro = num(val('s-nro')) || 1;
   c.comisionPct = num(val('s-com')); c.comisionBase = val('s-comb'); c.punitorioDiarioPct = num(val('s-pun')); c.diaVencimiento = num(val('s-dv')) || 10;
+  c.datosPago = val('s-pago'); c.telAdministracion = val('s-tel');
   c.avisoAjusteDias = num(val('s-avaj')) || 30; c.avisoVencimientoDias = num(val('s-avve')) || 60;
   guardarConfig(); toast('Ajustes guardados'); renderTodo();
 }
@@ -227,7 +229,7 @@ function init(){
   cargarLocal();
   cargarCacheMercado();
   var h = (location.hash || '').slice(1);
-  if (TABS.some(function(t){ return t[0] === h; })) PAGINA = h;
+  if (TABS.some(function(t){ return t[0] === h; }) || h === 'mensajes' || h === 'mialquiler') PAGINA = h;
   if (DB.config.socios.every(function(s){ return s.id !== VISTA; })) VISTA = 'total';
   if (conFirebase()) {
     // Sesión guardada: entra directo (el token se renueva solo). Si no, pantalla de ingreso.
@@ -249,6 +251,7 @@ function init(){
   actualizarMercado(false).then(function(){ renderTodo(); notificarSiCorresponde(); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function(){});
   chequearVersion(); setInterval(chequearVersion, 30 * 60e3);
+  iniciarChat();
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') cerrarModal(); });
 }
 window.addEventListener('DOMContentLoaded', init);

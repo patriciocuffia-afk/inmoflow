@@ -41,7 +41,7 @@ function reciboOtroConcepto(){
 // ─── dibujo del recibo ───────────────────────
 var REC_COLOR = [15, 118, 110];
 function reciboDibujar(doc, p, y0, leyenda, alto){
-  var c = byId('contratos', p.contratoId) || { locatario: { nombre: '—' } }, i = byId('inmuebles', p.inmuebleId) || {}, cfg = DB.config;
+  var c = byId('contratos', p.contratoId) || { locatario: { nombre: '—' } }, i = byId('inmuebles', p.inmuebleId) || c._inm || {}, cfg = DB.config;
   var X = 14, W = 182, R = X + W, tot = totalPago(p);
   doc.setDrawColor(210); doc.setLineWidth(0.3); doc.roundedRect(X, y0, W, alto, 3, 3);
   // franja superior

@@ -10,17 +10,25 @@ var PAGINA = 'panel', DETALLE = null; // DETALLE = {tipo:'inmueble'|'contrato', 
 
 function renderTabs(){
   var nAl = alertas().filter(function(a){ return a.nivel === 'bad' || a.nivel === 'warn'; }).length;
-  var ocultas = soloLectura() ? ['avisos'] : [];
-  if (soloLectura()) VISTA = socioDelUsuario() || VISTA;
+  if (soloLectura()) VISTA = socioDelUsuario() || 'total';
   $('vista').style.display = soloLectura() ? 'none' : '';
-  $('userchip').innerHTML = USUARIO || SIMULAR ? '<span class="user-chip" onclick="ir(\'ajustes\')" title="Mi cuenta"><span class="av">' + esc(iniciales(SIMULAR ? nombreSocio(SIMULAR) : quienSoy())) + '</span><span class="nm">' + esc(SIMULAR ? nombreSocio(SIMULAR) : quienSoy()) + '</span>' + (soloLectura() ? '<span class="ro-tag">solo lectura</span>' : '') + '</span>' : '';
-  $('tabs').innerHTML = TABS.filter(function(t){ return ocultas.indexOf(t[0]) < 0; }).map(function(t){
-    if (t[0] === 'ajustes' && soloLectura()) t = ['ajustes', 'Mi cuenta'];
+  var yo = SIMULAR ? nombreClave(SIMULAR) : quienSoy(), nMsj = typeof totalNoLeidos === 'function' ? totalNoLeidos() : 0;
+  $('userchip').innerHTML = USUARIO || SIMULAR ? '<span class="user-chip" onclick="ir(\'ajustes\')" title="Mi cuenta"><span class="av">' + esc(iniciales(yo)) + '</span><span class="nm">' + esc(yo) + '</span>' + (soloLectura() ? '<span class="ro-tag">' + (esLocatario() ? 'locatario' : 'solo lectura') + '</span>' : '') + '</span>' : '';
+  $('tabs').innerHTML = tabsDelRol().map(function(t){
     var on = PAGINA === t[0] || (PAGINA === 'detalle' && DETALLE && ((DETALLE.tipo === 'inmueble' && t[0] === 'inmuebles') || (DETALLE.tipo === 'contrato' && t[0] === 'contratos')));
-    return '<button class="tab' + (on ? ' on' : '') + '" onclick="ir(\'' + t[0] + '\')">' + t[1] + (t[0] === 'panel' && nAl ? '<span class="cnt">' + nAl + '</span>' : '') + '</button>';
+    var badge = t[0] === 'panel' && nAl ? nAl : t[0] === 'mensajes' && nMsj ? nMsj : 0;
+    return '<button class="tab' + (on ? ' on' : '') + '" onclick="ir(\'' + t[0] + '\')">' + t[1] + (badge ? '<span class="cnt">' + badge + '</span>' : '') + '</button>';
   }).join('');
   $('vista').innerHTML = '<option value="total">Vista: total</option>' + DB.config.socios.map(function(s){ return '<option value="' + s.id + '"' + (VISTA === s.id ? ' selected' : '') + '>Vista: ' + esc(s.nombre) + '</option>'; }).join('');
   $('vista').value = VISTA;
+}
+// Pestañas según quién usa la app: locatario, dueño (solo lectura) o administrador.
+function tabsDelRol(){
+  if (esLocatario()) return [['mialquiler', 'Mi alquiler'], ['mensajes', 'Mensajes'], ['ajustes', 'Mi cuenta']];
+  var t = TABS.slice(), i = t.findIndex(function(x){ return x[0] === 'ajustes'; });
+  t.splice(i, 0, ['mensajes', 'Mensajes']);
+  if (soloLectura()) t = t.filter(function(x){ return x[0] !== 'avisos'; }).map(function(x){ return x[0] === 'ajustes' ? ['ajustes', 'Mi cuenta'] : x; });
+  return t;
 }
 function setVista(v){ VISTA = v; localStorage.setItem('inmoflow_vista', v); renderTodo(); }
 
@@ -40,9 +48,16 @@ function renderTodo(){
   var f = {
     panel: renderPanel, inmuebles: renderInmuebles, contratos: renderContratos, pagos: renderPagos,
     gastos: renderGastos, liquidacion: renderLiquidacion, rentabilidad: renderRentabilidad,
-    avisos: renderAvisos, ajustes: renderAjustes, detalle: renderDetalle, recibos: renderRecibos
+    avisos: renderAvisos, ajustes: renderAjustes, detalle: renderDetalle, recibos: renderRecibos,
+    mensajes: renderMensajes, mialquiler: renderMiAlquiler
   }[PAGINA];
-  if (soloLectura() && PAGINA === 'avisos') { PAGINA = 'panel'; f = renderPanel; }
+  // cada rol solo navega por sus pestañas (el locatario no tiene panel, inmuebles, etc.)
+  var permitidas = tabsDelRol().map(function(t){ return t[0]; });
+  if (permitidas.indexOf(PAGINA) < 0 && !(PAGINA === 'detalle' && !esLocatario())) {
+    PAGINA = permitidas[0]; DETALLE = null;
+    document.querySelectorAll('.page').forEach(function(s){ s.classList.toggle('on', s.id === 'p-' + PAGINA); });
+    return renderTodo();
+  }
   if (f) f();
   aplicarSoloLectura($('main'));
 }
@@ -84,7 +99,11 @@ function estadoContrato(c){
 function contratoVigenteDe(inmId){
   return vivos('contratos').filter(function(c){ return c.inmuebleId === inmId && estadoContrato(c) === 'vigente'; })[0] || null;
 }
-function nombreInm(id){ var i = byId('inmuebles', id); return i ? i.nombre : '(sin inmueble)'; }
+function nombreInm(id){
+  var i = byId('inmuebles', id); if (i) return i.nombre;
+  var c = vivos('contratos').filter(function(x){ return x.inmuebleId === id && x._inm; })[0]; // locatarios: no leen inmuebles
+  return c ? (c._inm.nombre || c._inm.direccion) : '(sin inmueble)';
+}
 function etiquetaContrato(c){ return (c.locatario && c.locatario.nombre || 'Sin locatario') + ' — ' + nombreInm(c.inmuebleId); }
 
 // ─── alertas (ajustes, vencimientos, mora) ───

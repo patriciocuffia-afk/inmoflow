@@ -226,6 +226,38 @@ tfoot td{font-weight:800;background:var(--bg)}
 .neg-v{color:var(--bad)}
 .recep{border:1px solid var(--line);border-radius:8px;padding:4px 6px;background:var(--card);font-size:12px;max-width:170px}
 .recibo-prev{width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:#fff}
+/* chat */
+.chat-wrap{display:grid;grid-template-columns:300px 1fr;gap:12px;min-height:60vh}
+.chat-list{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:auto;max-height:72vh}
+.chat-item{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;padding:10px 12px;cursor:pointer}
+.chat-item:hover{background:var(--bg)}.chat-item.on{background:var(--pri-soft)}
+.chat-item .av{width:34px;height:34px;font-size:12px;border-width:0;flex:0 0 auto}
+.ci-t{display:flex;flex-direction:column;flex:1;min-width:0}
+.ci-u{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.chat-item .cnt,.tab .cnt{background:var(--bad);color:#fff;border-radius:99px;font-size:10px;padding:1px 6px;font-weight:700}
+.chat-box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;height:72vh;min-height:380px}
+.chat-vacio{justify-content:center}
+.chat-h{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.chat-back{display:none}
+.chat-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.msg{display:flex}.msg.yo{justify-content:flex-end}
+.burb{max-width:78%;padding:8px 11px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14px;line-height:1.4;word-wrap:break-word}
+.msg.yo .burb{background:var(--pri);color:#fff;border-color:var(--pri);border-bottom-right-radius:4px}
+.msg.otro .burb{border-bottom-left-radius:4px}
+.burb .autor{font-size:11px;font-weight:700;color:var(--pri);margin-bottom:2px}
+.msg.yo .burb .autor{color:inherit;opacity:.85}
+.burb .hora{font-size:10px;opacity:.7;text-align:right;margin-top:3px}
+.chat-in{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);align-items:flex-end}
+.chat-in textarea{min-height:44px;max-height:140px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .msg.yo .burb{color:#04201d}}
+:root[data-theme="dark"] .msg.yo .burb{color:#04201d}
+@media (max-width:760px){
+  .chat-wrap{grid-template-columns:1fr}
+  .chat-wrap.abierto .chat-list{display:none}
+  .chat-wrap:not(.abierto) .chat-box{display:none}
+  .chat-back{display:inline-flex}
+  .chat-box{height:calc(100vh - 210px)}
+}
 /* sesión y roles */
 .login{position:fixed;inset:0;z-index:80;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px}
 .login-box{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--sh);padding:28px 24px;width:100%;max-width:380px}
@@ -251,7 +283,7 @@ body.simulando .sim-bar{display:block}
 </head>
 <body>
 <div class="upd" id="upd" onclick="location.reload()">Hay una versión nueva de InmoFlow — tocá para actualizar</div>
-<div class="sim-bar" onclick="simularDueno(null)">Estás viendo InmoFlow como lo ve el dueño (solo lectura) — tocá acá para volver a la vista de administrador</div>
+<div class="sim-bar" onclick="simularDueno(null)">Estás viendo InmoFlow como lo ve esa persona (solo lectura) — tocá acá para volver a la vista de administrador</div>
 <div class="login" id="login"></div>
 <header class="hdr">
   <div class="hdr-row">
@@ -275,6 +307,8 @@ body.simulando .sim-bar{display:block}
   <section class="page" id="p-avisos"></section>
   <section class="page" id="p-ajustes"></section>
   <section class="page" id="p-detalle"></section>
+  <section class="page" id="p-mensajes"></section>
+  <section class="page" id="p-mialquiler"></section>
 </main>
 <div class="mbg" id="mbg" onclick="if(event.target===this)cerrarModal()"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
@@ -283,7 +317,7 @@ body.simulando .sim-bar{display:block}
 // ═══════════════════════════════════════════
 // InmoFlow — núcleo: utilidades, base de datos local y sincronización
 // ═══════════════════════════════════════════
-var APP_VERSION = '2026-10-22-3';
+var APP_VERSION = '2026-10-26-1';
 var OAUTH_CLIENT_ID = '485000953207-g3r6kjptl4dvoc8p0u1aj20nket5mdrm.apps.googleusercontent.com';
 var PROJECT_ID = 'costo-de-obras';
 var FS_BASE = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID + '/databases/(default)/documents';
@@ -343,6 +377,8 @@ function configBase(){
     reciboNro: 1,
     avisoAjusteDias: 30,
     avisoVencimientoDias: 60,
+    datosPago: '',          // alias o CBU para transferir (lo ven los locatarios)
+    telAdministracion: '',
     categoriasGasto: ['Arreglos', 'Pintura', 'Electricidad', 'Plomería', 'Gas', 'Albañilería', 'Impuesto Rentas', 'Tasa municipal', 'Expensas', 'Seguro', 'Servicios', 'Honorarios', 'Mejora / inversión', 'Otros'],
     plantillas: null,
     updatedAt: 0
@@ -356,6 +392,7 @@ function cargarLocal(){
       var d = JSON.parse(raw);
       COLS.forEach(function(c){ DB[c] = d[c] || []; });
       DB.auditoria = d.auditoria || [];
+      DB.mensajes = d.mensajes || [];
       rehacerSnap();
       DB.config = d.config || null;
       PENDIENTES = d._pend || {};
@@ -367,7 +404,7 @@ function cargarLocal(){
 }
 
 function guardarLocal(){
-  var d = { _pend: PENDIENTES, config: DB.config, auditoria: DB.auditoria || [] };
+  var d = { _pend: PENDIENTES, config: DB.config, auditoria: DB.auditoria || [], mensajes: DB.mensajes || [] };
   COLS.forEach(function(c){ d[c] = DB[c]; });
   try { localStorage.setItem(LS_DB, JSON.stringify(d)); }
   catch (e) { alert('No se pudo guardar localmente (almacenamiento lleno). Exportá un backup.'); }
@@ -404,9 +441,17 @@ function guardarConfig(){
   if (soloLectura()) return;
   DB.config.updatedAt = Date.now();
   DB.config.modPor = quienSoy();
-  PENDIENTES['config/config'] = true;
+  PENDIENTES['config/config'] = true; PENDIENTES['config/publico'] = true;
   guardarLocal();
   programarSync();
+}
+// Lo que pueden leer dueños y locatarios de la configuración: sin plantillas, usuarios ni datos personales de los socios.
+function configPublica(){
+  var c = DB.config;
+  return { id: 'publico', updatedAt: c.updatedAt || Date.now(), administrador: c.administrador, emisor: c.emisor, emisorDatos: c.emisorDatos,
+    comisionPct: c.comisionPct, comisionBase: c.comisionBase, diaVencimiento: c.diaVencimiento, punitorioDiarioPct: c.punitorioDiarioPct,
+    reciboPuntoVenta: c.reciboPuntoVenta, datosPago: c.datosPago || '', telAdministracion: c.telAdministracion || '',
+    socios: c.socios.map(function(s){ return { id: s.id, nombre: s.nombre }; }) };
 }
 
 // ─── Google: login + Firestore + Drive ──────
@@ -491,9 +536,11 @@ function fsListAll(col){
 }
 // Para un dueño: solo los documentos donde figura en visiblePara (las reglas exigen esta consulta).
 function fsQuerySocio(col, socioId){
+  return fsRunQuery(col, { field: { fieldPath: 'visiblePara' }, op: 'ARRAY_CONTAINS', value: { stringValue: socioId } });
+}
+function fsRunQuery(col, filtro){
   return fsFetch(fsBase() + ':runQuery', { method: 'POST', body: JSON.stringify({ structuredQuery: {
-    from: [{ collectionId: 'inmoflow_' + col }],
-    where: { fieldFilter: { field: { fieldPath: 'visiblePara' }, op: 'ARRAY_CONTAINS', value: { stringValue: socioId } } }
+    from: [{ collectionId: 'inmoflow_' + col }], where: { fieldFilter: filtro }
   } }) }).then(function(r){ return r.json(); }).then(function(arr){
     var out = [];
     (Array.isArray(arr) ? arr : []).forEach(function(x){ if (x.document) try { out.push(JSON.parse(x.document.fields.json.stringValue)); } catch (e) {} });
@@ -512,13 +559,17 @@ function fsGetDoc(col, id){
   }).catch(function(e){ if (/403/.test(e.message)) return null; throw e; });
 }
 function fsPut(col, obj){
-  var vis = col === 'config' || col === 'auditoria' ? [] : visiblePara(col, obj);
+  var vis = col === 'config' || col === 'auditoria' || col === 'mensajes' ? [] : visiblePara(col, obj);
+  var data = obj;
+  // el locatario no lee inmuebles (tienen costos y datos del dueño): el contrato lleva el nombre y la dirección
+  if (col === 'contratos') { var inm = byId('inmuebles', obj.inmuebleId); data = Object.assign({}, obj, { _inm: inm ? { nombre: inm.nombre, direccion: inm.direccion || '', localidad: inm.localidad || '' } : (obj._inm || null) }); }
   var body = { fields: {
-    json: { stringValue: JSON.stringify(obj) },
+    json: { stringValue: JSON.stringify(data) },
     updatedAt: { integerValue: String(obj.updatedAt || Date.now()) },
     updatedBy: { stringValue: emailYo() },
     visiblePara: { arrayValue: { values: vis.map(function(s){ return { stringValue: s }; }) } }
   } };
+  if (col === 'mensajes') { body.fields.hilo = { stringValue: obj.hilo }; body.fields.autorEmail = { stringValue: obj.autorEmail }; }
   // la auditoría solo se crea (las reglas no permiten modificarla): si ya existe, ya se subió antes
   var soloCrear = col === 'auditoria' ? '?currentDocument.exists=false' : '';
   return fsFetch(fsBase() + '/inmoflow_' + col + '/' + encodeURIComponent(obj.id) + soloCrear, { method: 'PATCH', body: JSON.stringify(body) })
@@ -528,13 +579,13 @@ function fsPut(col, obj){
 // Usuarios: campos planos (las reglas los leen para saber el rol de cada uno).
 function fsPutUsuario(u){
   var email = String(u.email).toLowerCase().trim();
-  var body = { fields: { email: { stringValue: email }, nombre: { stringValue: u.nombre || '' }, rol: { stringValue: u.rol }, socioId: { stringValue: u.socioId || '' }, updatedBy: { stringValue: emailYo() } } };
+  var body = { fields: { email: { stringValue: email }, nombre: { stringValue: u.nombre || '' }, rol: { stringValue: u.rol }, socioId: { stringValue: u.socioId || '' }, contratoId: { stringValue: u.contratoId || '' }, updatedBy: { stringValue: emailYo() } } };
   return fsFetch(fsBase() + '/inmoflow_usuarios/' + encodeURIComponent(email), { method: 'PATCH', body: JSON.stringify(body) })
-    .then(function(r){ if (!r.ok) throw new Error('No se pudo guardar el usuario (' + r.status + ')'); return { email: email, nombre: u.nombre, rol: u.rol, socioId: u.socioId || '' }; });
+    .then(function(r){ if (!r.ok) throw new Error('No se pudo guardar el usuario (' + r.status + ')'); return { email: email, nombre: u.nombre, rol: u.rol, socioId: u.socioId || '', contratoId: u.contratoId || '' }; });
 }
 function fsListUsuarios(){
   return fsFetch(fsBase() + '/inmoflow_usuarios?pageSize=100').then(function(r){ return r.json(); }).then(function(d){
-    return (d.documents || []).map(function(doc){ var f = doc.fields || {}; function s(k){ return f[k] ? f[k].stringValue : ''; } return { email: s('email'), nombre: s('nombre'), rol: s('rol'), socioId: s('socioId') }; });
+    return (d.documents || []).map(function(doc){ var f = doc.fields || {}; function s(k){ return f[k] ? f[k].stringValue : ''; } return { email: s('email'), nombre: s('nombre'), rol: s('rol'), socioId: s('socioId'), contratoId: s('contratoId') }; });
   });
 }
 function fsDelUsuario(email){ return fsFetch(fsBase() + '/inmoflow_usuarios/' + encodeURIComponent(email), { method: 'DELETE' }); }
@@ -557,9 +608,9 @@ function sincronizar(traer){
   if (traer) {
     var cols = duenio ? COLS : COLS.concat(['auditoria']);
     p = Promise.all(cols.map(function(c){
-      var q = duenio ? (USUARIO.socioId ? fsQuerySocio(c, USUARIO.socioId) : Promise.resolve([])) : fsListAll(c);
+      var q = duenio ? (claveDe(USUARIO) ? fsQuerySocio(c, claveDe(USUARIO)) : Promise.resolve([])) : fsListAll(c);
       return q.then(function(arr){ return [c, arr]; });
-    }).concat([fsGetDoc('config', 'config').then(function(cf){ return ['config', cf ? [cf] : []]; })]))
+    }).concat([fsGetDoc('config', duenio ? 'publico' : 'config').then(function(cf){ return ['config', cf ? [cf] : []]; })]))
       .then(function(res){
         res.forEach(function(x){
           var c = x[0];
@@ -570,6 +621,7 @@ function sincronizar(traer){
           }
           x[1].forEach(function(rem){
             if (c === 'config') {
+              if (duenio) { Object.assign(DB.config, rem); return; } // dueños y locatarios: solo la configuración pública
               if ((rem.updatedAt || 0) > (DB.config.updatedAt || 0) && !PENDIENTES['config/config']) DB.config = Object.assign(configBase(), rem);
               return;
             }
@@ -588,16 +640,16 @@ function sincronizar(traer){
     return keys.reduce(function(acc, k){
       return acc.then(function(){
         var c = k.split('/')[0], id = k.slice(c.length + 1);
-        var obj = c === 'config' ? DB.config : (DB[c] || []).find(function(x){ return x.id === id; });
+        var obj = c === 'config' ? (id === 'publico' ? configPublica() : DB.config) : (DB[c] || []).find(function(x){ return x.id === id; });
         if (!obj) { delete PENDIENTES[k]; return; }
-        if (c === 'config') obj.id = 'config';
+        if (c === 'config' && id !== 'publico') obj.id = 'config';
         return fsPut(c, obj).then(function(){ delete PENDIENTES[k]; }).catch(function(e){ fallas.push(e.message); if (/sesión/i.test(e.message)) throw e; });
       });
     }, Promise.resolve()).then(function(){ if (fallas.length) throw new Error(fallas.length + ' cambio(s) no se pudieron subir (' + fallas[0] + '). Se reintenta en la próxima sincronización.'); });
   }).then(function(){
     guardarLocal();
     setSync('on', conFirebase() ? quienSoy() : 'Sincronizado');
-    if (traer) renderTodo();
+    if (traer) { renderTodo(); if (typeof chatTraer === 'function') chatTraer(); }
   }).catch(function(e){
     console.error(e);
     setSync('err', 'Error sync');
@@ -659,14 +711,25 @@ var FB = { apiKey: 'AIzaSyByP5f-8_10KNfjpELDldNMAuiqI9-Lgbs', projectId: 'inmofl
 // ?local=1 en la dirección: modo de prueba sin servidor (solo para desarrollo en esta PC)
 if (/[?&]local=1\b/.test(location.search)) FB = { apiKey: '', projectId: '' };
 var SUPERADMIN = 'patriciocuffia@gmail.com';     // siempre administrador (también está fijo en las reglas)
-var ROLES = { admin: 'Administrador (acceso completo)', dueno: 'Dueño (solo lectura de sus inmuebles)' };
+var ROLES = { admin: 'Administrador (acceso completo)', dueno: 'Dueño (solo lectura de sus inmuebles)', locatario: 'Locatario (ve solo su alquiler)' };
 
-// USUARIO = { email, nombre, rol: 'admin'|'dueno', socioId }
+// USUARIO = { email, nombre, rol: 'admin'|'dueno'|'locatario', socioId, contratoId }
+// SIMULAR = socioId (ver como dueño) o 'loc:<contratoId>' (ver como locatario), solo en pantalla
 var USUARIO = null, FB_SES = null, SIMULAR = null;
 function conFirebase(){ return !!(FB.apiKey && FB.projectId); }
 function esAdmin(){ return !SIMULAR && (!conFirebase() || (USUARIO && USUARIO.rol === 'admin')); }
 function soloLectura(){ return !!SIMULAR || (conFirebase() && USUARIO && USUARIO.rol !== 'admin'); }
-function socioDelUsuario(){ return SIMULAR || (USUARIO && USUARIO.socioId) || null; }
+function esLocatario(){ return SIMULAR ? SIMULAR.indexOf('loc:') === 0 : !!(conFirebase() && USUARIO && USUARIO.rol === 'locatario'); }
+function contratoDelUsuario(){ return SIMULAR && SIMULAR.indexOf('loc:') === 0 ? SIMULAR.slice(4) : (USUARIO && USUARIO.rol === 'locatario' ? USUARIO.contratoId : null); }
+function socioDelUsuario(){ if (SIMULAR) return SIMULAR.indexOf('loc:') === 0 ? null : SIMULAR; return (USUARIO && USUARIO.rol === 'dueno' && USUARIO.socioId) || null; }
+// Clave con la que el servidor decide qué puede leer (ver firestore.rules): el socio o 'loc:<contrato>'
+function claveDe(u){ return u.rol === 'locatario' ? (u.contratoId ? 'loc:' + u.contratoId : '') : (u.socioId || ''); }
+function claveUsuario(){ return SIMULAR || (USUARIO ? claveDe(USUARIO) : ''); }
+function nombreClave(k){
+  if (!k) return '';
+  if (k.indexOf('loc:') === 0) { var c = byId('contratos', k.slice(4)); return c ? c.locatario.nombre : 'Locatario'; }
+  return nombreSocio(k);
+}
 function quienSoy(){ return USUARIO ? (USUARIO.nombre || USUARIO.email) : (DB.config.usuarioLocal || 'Local'); }
 function emailYo(){ return USUARIO ? USUARIO.email : 'local'; }
 
@@ -706,10 +769,11 @@ function fbCargarPerfil(){
       if (email === SUPERADMIN) return fsPutUsuario({ email: email, nombre: FB_SES.nombre || 'Patricio Cuffia', rol: 'admin', socioId: 'patricio' }).then(function(u){ return u; });
       throw new Error('La cuenta ' + email + ' no está habilitada en InmoFlow. Pedile acceso a un administrador.');
     }
-    return { email: email, nombre: f.nombre || FB_SES.nombre, rol: f.rol, socioId: f.socioId || '' };
+    return { email: email, nombre: f.nombre || FB_SES.nombre, rol: f.rol, socioId: f.socioId || '', contratoId: f.contratoId || '' };
   }).then(function(u){
     USUARIO = u; localStorage.setItem('inmoflow_usuario', JSON.stringify(u));
-    if (u.rol !== 'admin' && u.socioId) { VISTA = u.socioId; }
+    if (u.rol === 'dueno' && u.socioId) { VISTA = u.socioId; }
+    if (u.rol === 'locatario') { VISTA = 'total'; PAGINA = 'mialquiler'; }
     return u;
   });
 }
@@ -723,6 +787,12 @@ var USUARIOS_INICIALES = [
 var USUARIOS_RETIRAR = ['antofalco08@hotmail.com'];
 function provisionarUsuariosIniciales(){
   if (!conFirebase() || !esAdmin()) return Promise.resolve();
+  // Una sola vez: volver a subir todo con las claves de locatario (visiblePara 'loc:…') y la configuración pública.
+  if (!DB.config.visibilidadV2) {
+    COLS.forEach(function(c){ DB[c].forEach(function(o){ PENDIENTES[c + '/' + o.id] = true; }); });
+    DB.config.visibilidadV2 = true; guardarConfig();
+    toast('Actualizando permisos de acceso en el servidor…', 4000);
+  }
   var hechos = DB.config.usuariosProvisionados || [];
   var pend = USUARIOS_INICIALES.filter(function(u){ return hechos.indexOf(u.email) < 0; });
   var retirar = USUARIOS_RETIRAR.filter(function(e){ return (DB.config.usuariosRetirados || []).indexOf(e) < 0; });
@@ -781,7 +851,7 @@ function salir(){
 // Si en este dispositivo entra otra persona, no debe quedar la copia de datos del anterior.
 function DB_LIMPIAR_SI_OTRO_USUARIO(){
   var prev = localStorage.getItem('inmoflow_ultimo_email');
-  if (prev && prev !== USUARIO.email) { COLS.forEach(function(c){ DB[c] = []; }); DB.auditoria = []; PENDIENTES = {}; guardarLocal(); }
+  if (prev && prev !== USUARIO.email) { COLS.forEach(function(c){ DB[c] = []; }); DB.auditoria = []; DB.mensajes = []; PENDIENTES = {}; try { localStorage.removeItem('inmoflow_leidos'); } catch (e) {} guardarLocal(); }
   localStorage.setItem('inmoflow_ultimo_email', USUARIO.email);
 }
 
@@ -792,11 +862,11 @@ function visiblePara(col, o){
   function add(id){ if (id) s[id] = true; }
   function deInm(id){ var i = byId('inmuebles', id); (i ? distribucionInm(i) : []).forEach(function(t){ add(t.socioId); }); }
   if (col === 'inmuebles') distribucionInm(o).forEach(function(t){ add(t.socioId); });
-  else if (col === 'contratos') deInm(o.inmuebleId);
-  else if (col === 'pagos') { (o.distribucion || []).forEach(function(t){ add(t.socioId); }); (o.recibio || []).forEach(function(r){ if (r.quien !== 'admin') add(r.quien); }); if (!o.distribucion) deInm(o.inmuebleId); }
+  else if (col === 'contratos') { deInm(o.inmuebleId); add('loc:' + o.id); }
+  else if (col === 'pagos') { add('loc:' + o.contratoId); (o.distribucion || []).forEach(function(t){ add(t.socioId); }); (o.recibio || []).forEach(function(r){ if (r.quien !== 'admin') add(r.quien); }); if (!o.distribucion) deInm(o.inmuebleId); }
   else if (col === 'gastos') { (o.distribucion || []).forEach(function(t){ add(t.socioId); }); if (String(o.pagadoPor).indexOf('socio:') === 0) add(o.pagadoPor.slice(6)); if (!o.distribucion) deInm(o.inmuebleId); }
   else if (col === 'movimientos') { add(o.socioId); add(o.destinoId); }
-  else if (col === 'comunicaciones') { var c = byId('contratos', o.contratoId); if (c) deInm(c.inmuebleId); }
+  else if (col === 'comunicaciones') { add('loc:' + o.contratoId); var c = byId('contratos', o.contratoId); if (c) deInm(c.inmuebleId); }
   return Object.keys(s);
 }
 
@@ -835,7 +905,7 @@ function fechaHora(iso){ var d = new Date(iso); return isNaN(d) ? '' : fDate(iso
 
 // ─── modo solo lectura en la interfaz ────────
 // Las reglas del servidor ya impiden escribir; esto evita que el dueño vea botones que no puede usar.
-var RX_ESCRITURA = /^(modal(Inmueble|Contrato|Gasto|Costo|Movimiento|Ajuste)\(|modalPago\(null|modalPago\(\)|guardar|eliminar|borrar|finalizar|reactivar|agregarSocio|elegir|importar|setRecibio|setMedio|quitarDoc|reciboOtroConcepto|aplicarAjuste|DB\.config|modalMensaje|registrarMasivo|modalUsuario|subirArchivos|ctrAdd)/;
+var RX_ESCRITURA = /^(darAcceso|nuevaConversacion|modal(Inmueble|Contrato|Gasto|Costo|Movimiento|Ajuste)\(|modalPago\(null|modalPago\(\)|guardar|eliminar|borrar|finalizar|reactivar|agregarSocio|elegir|importar|setRecibio|setMedio|quitarDoc|reciboOtroConcepto|aplicarAjuste|DB\.config|modalMensaje|registrarMasivo|modalUsuario|subirArchivos|ctrAdd)/;
 function aplicarSoloLectura(root){
   if (!soloLectura() || !root) return;
   root.querySelectorAll('[onclick]').forEach(function(el){
@@ -857,10 +927,11 @@ function aplicarSoloLecturaModal(){
 // ─── simular la vista de un dueño (solo administradores, solo en pantalla) ───
 function simularDueno(socioId){
   SIMULAR = socioId || null;
-  VISTA = socioId || 'total';
+  var loc = SIMULAR && SIMULAR.indexOf('loc:') === 0;
+  VISTA = SIMULAR && !loc ? SIMULAR : 'total';
   document.body.classList.toggle('simulando', !!SIMULAR);
-  ir(SIMULAR ? 'panel' : 'ajustes');
-  if (SIMULAR) toast('Viendo como ' + nombreSocio(socioId) + ' (solo lectura). Tocá la barra de arriba para volver.', 5000);
+  ir(!SIMULAR ? 'ajustes' : loc ? 'mialquiler' : 'panel');
+  if (SIMULAR) toast('Viendo como ' + nombreClave(SIMULAR) + ' (solo lectura). Tocá la barra de arriba para volver.', 5000);
 }
 // ═══════════════════════════════════════════
 // Cotizaciones del dólar e índices de actualización
@@ -1399,17 +1470,25 @@ var PAGINA = 'panel', DETALLE = null; // DETALLE = {tipo:'inmueble'|'contrato', 
 
 function renderTabs(){
   var nAl = alertas().filter(function(a){ return a.nivel === 'bad' || a.nivel === 'warn'; }).length;
-  var ocultas = soloLectura() ? ['avisos'] : [];
-  if (soloLectura()) VISTA = socioDelUsuario() || VISTA;
+  if (soloLectura()) VISTA = socioDelUsuario() || 'total';
   $('vista').style.display = soloLectura() ? 'none' : '';
-  $('userchip').innerHTML = USUARIO || SIMULAR ? '<span class="user-chip" onclick="ir(\'ajustes\')" title="Mi cuenta"><span class="av">' + esc(iniciales(SIMULAR ? nombreSocio(SIMULAR) : quienSoy())) + '</span><span class="nm">' + esc(SIMULAR ? nombreSocio(SIMULAR) : quienSoy()) + '</span>' + (soloLectura() ? '<span class="ro-tag">solo lectura</span>' : '') + '</span>' : '';
-  $('tabs').innerHTML = TABS.filter(function(t){ return ocultas.indexOf(t[0]) < 0; }).map(function(t){
-    if (t[0] === 'ajustes' && soloLectura()) t = ['ajustes', 'Mi cuenta'];
+  var yo = SIMULAR ? nombreClave(SIMULAR) : quienSoy(), nMsj = typeof totalNoLeidos === 'function' ? totalNoLeidos() : 0;
+  $('userchip').innerHTML = USUARIO || SIMULAR ? '<span class="user-chip" onclick="ir(\'ajustes\')" title="Mi cuenta"><span class="av">' + esc(iniciales(yo)) + '</span><span class="nm">' + esc(yo) + '</span>' + (soloLectura() ? '<span class="ro-tag">' + (esLocatario() ? 'locatario' : 'solo lectura') + '</span>' : '') + '</span>' : '';
+  $('tabs').innerHTML = tabsDelRol().map(function(t){
     var on = PAGINA === t[0] || (PAGINA === 'detalle' && DETALLE && ((DETALLE.tipo === 'inmueble' && t[0] === 'inmuebles') || (DETALLE.tipo === 'contrato' && t[0] === 'contratos')));
-    return '<button class="tab' + (on ? ' on' : '') + '" onclick="ir(\'' + t[0] + '\')">' + t[1] + (t[0] === 'panel' && nAl ? '<span class="cnt">' + nAl + '</span>' : '') + '</button>';
+    var badge = t[0] === 'panel' && nAl ? nAl : t[0] === 'mensajes' && nMsj ? nMsj : 0;
+    return '<button class="tab' + (on ? ' on' : '') + '" onclick="ir(\'' + t[0] + '\')">' + t[1] + (badge ? '<span class="cnt">' + badge + '</span>' : '') + '</button>';
   }).join('');
   $('vista').innerHTML = '<option value="total">Vista: total</option>' + DB.config.socios.map(function(s){ return '<option value="' + s.id + '"' + (VISTA === s.id ? ' selected' : '') + '>Vista: ' + esc(s.nombre) + '</option>'; }).join('');
   $('vista').value = VISTA;
+}
+// Pestañas según quién usa la app: locatario, dueño (solo lectura) o administrador.
+function tabsDelRol(){
+  if (esLocatario()) return [['mialquiler', 'Mi alquiler'], ['mensajes', 'Mensajes'], ['ajustes', 'Mi cuenta']];
+  var t = TABS.slice(), i = t.findIndex(function(x){ return x[0] === 'ajustes'; });
+  t.splice(i, 0, ['mensajes', 'Mensajes']);
+  if (soloLectura()) t = t.filter(function(x){ return x[0] !== 'avisos'; }).map(function(x){ return x[0] === 'ajustes' ? ['ajustes', 'Mi cuenta'] : x; });
+  return t;
 }
 function setVista(v){ VISTA = v; localStorage.setItem('inmoflow_vista', v); renderTodo(); }
 
@@ -1429,9 +1508,16 @@ function renderTodo(){
   var f = {
     panel: renderPanel, inmuebles: renderInmuebles, contratos: renderContratos, pagos: renderPagos,
     gastos: renderGastos, liquidacion: renderLiquidacion, rentabilidad: renderRentabilidad,
-    avisos: renderAvisos, ajustes: renderAjustes, detalle: renderDetalle, recibos: renderRecibos
+    avisos: renderAvisos, ajustes: renderAjustes, detalle: renderDetalle, recibos: renderRecibos,
+    mensajes: renderMensajes, mialquiler: renderMiAlquiler
   }[PAGINA];
-  if (soloLectura() && PAGINA === 'avisos') { PAGINA = 'panel'; f = renderPanel; }
+  // cada rol solo navega por sus pestañas (el locatario no tiene panel, inmuebles, etc.)
+  var permitidas = tabsDelRol().map(function(t){ return t[0]; });
+  if (permitidas.indexOf(PAGINA) < 0 && !(PAGINA === 'detalle' && !esLocatario())) {
+    PAGINA = permitidas[0]; DETALLE = null;
+    document.querySelectorAll('.page').forEach(function(s){ s.classList.toggle('on', s.id === 'p-' + PAGINA); });
+    return renderTodo();
+  }
   if (f) f();
   aplicarSoloLectura($('main'));
 }
@@ -1473,7 +1559,11 @@ function estadoContrato(c){
 function contratoVigenteDe(inmId){
   return vivos('contratos').filter(function(c){ return c.inmuebleId === inmId && estadoContrato(c) === 'vigente'; })[0] || null;
 }
-function nombreInm(id){ var i = byId('inmuebles', id); return i ? i.nombre : '(sin inmueble)'; }
+function nombreInm(id){
+  var i = byId('inmuebles', id); if (i) return i.nombre;
+  var c = vivos('contratos').filter(function(x){ return x.inmuebleId === id && x._inm; })[0]; // locatarios: no leen inmuebles
+  return c ? (c._inm.nombre || c._inm.direccion) : '(sin inmueble)';
+}
 function etiquetaContrato(c){ return (c.locatario && c.locatario.nombre || 'Sin locatario') + ' — ' + nombreInm(c.inmuebleId); }
 
 // ─── alertas (ajustes, vencimientos, mora) ───
@@ -2111,7 +2201,7 @@ function detCtrDatos(c){
     (c.locadorFormal ? '<div class="card"><h3>Locador según contrato</h3><div>' + esc(c.locadorFormal) + '</div></div>' : '') + (c.garantes || []).map(function(g, k){ return persona(g, 'Garante ' + (k + 1)); }).join('') +
     '<div class="card"><h3>Condiciones</h3><div class="kv"><div>Destino</div><div>' + esc(c.destino || '') + '</div><div>Vencimiento</div><div>día ' + (c.diaVencimiento || DB.config.diaVencimiento) + ' de cada mes</div><div>Punitorio</div><div>' + pct(c.punitorioPct !== '' && c.punitorioPct != null ? c.punitorioPct : DB.config.punitorioDiarioPct, 2) + ' diario</div><div>Comisión adm.</div><div>' + pct(com, 2) + ' mensual</div><div>Honorarios</div><div>' + (function(){ var h = honorariosContrato(c); return h.monto ? fmt(h.monto) + ' (' + pct(h.pct, 2) + (h.baseTipo === 'total' ? ' del contrato' : ' de un mes') + ', a cargo del ' + h.paga + ', ' + perNom(h.mes) + ')' : '—'; })() + '</div><div>Depósito</div><div>' + (c.deposito ? fmt(c.deposito) : '—') + '</div></div>' +
     (c.notas ? '<div class="hint" style="margin-top:8px;white-space:pre-wrap">' + esc(c.notas) + '</div>' : '') +
-    '<div style="margin-top:12px">' + (estadoContrato(c) === 'vigente' || estadoContrato(c) === 'futuro' ? '<button class="btn sm" onclick="finalizarContrato(\'' + c.id + '\')">Finalizar contrato</button>' : '<button class="btn sm" onclick="reactivarContrato(\'' + c.id + '\')">Reactivar</button>') + '</div></div></div>';
+    '<div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">' + (conFirebase() ? '<button class="btn sm p" onclick="darAccesoLocatario(\'' + c.id + '\')">Dar acceso a la app al locatario</button>' : '') + (estadoContrato(c) === 'vigente' || estadoContrato(c) === 'futuro' ? '<button class="btn sm" onclick="finalizarContrato(\'' + c.id + '\')">Finalizar contrato</button>' : '<button class="btn sm" onclick="reactivarContrato(\'' + c.id + '\')">Reactivar</button>') + '</div></div></div>';
 }
 // ═══════════════════════════════════════════
 // COBROS (pagos de alquiler) y RECIBOS
@@ -2313,7 +2403,7 @@ function reciboOtroConcepto(){
 // ─── dibujo del recibo ───────────────────────
 var REC_COLOR = [15, 118, 110];
 function reciboDibujar(doc, p, y0, leyenda, alto){
-  var c = byId('contratos', p.contratoId) || { locatario: { nombre: '—' } }, i = byId('inmuebles', p.inmuebleId) || {}, cfg = DB.config;
+  var c = byId('contratos', p.contratoId) || { locatario: { nombre: '—' } }, i = byId('inmuebles', p.inmuebleId) || c._inm || {}, cfg = DB.config;
   var X = 14, W = 182, R = X + W, tot = totalPago(p);
   doc.setDrawColor(210); doc.setLineWidth(0.3); doc.roundedRect(X, y0, W, alto, 3, 3);
   // franja superior
@@ -3058,6 +3148,7 @@ function renderAjustes(){
       '<div class="fr">' + inp('s-adm', 'Nombre del administrador', cfg.administrador) + inp('s-pv', 'Punto de venta', cfg.reciboPuntoVenta) + inp('s-nro', 'Próximo N° de recibo', cfg.reciboNro, 'number') + '</div>' +
       '<div class="fr">' + inp('s-com', 'Comisión administrador %', cfg.comisionPct, 'number', 'step="0.01"') + sel('s-comb', 'Se calcula sobre', [['alquiler', 'Solo el alquiler'], ['total', 'Alquiler + punitorios + ingresos']], cfg.comisionBase) + '</div>' +
       '<div class="fr">' + inp('s-pun', 'Punitorio diario %', cfg.punitorioDiarioPct, 'number', 'step="0.01"') + inp('s-dv', 'Día de vencimiento', cfg.diaVencimiento, 'number') + inp('s-avaj', 'Avisar ajustes con (días)', cfg.avisoAjusteDias, 'number') + inp('s-avve', 'Avisar fin de contrato con (días)', cfg.avisoVencimientoDias, 'number') + '</div>' +
+      '<div class="fr">' + txa('s-pago', 'Datos para pagar (los ven los locatarios): alias, CBU, titular', cfg.datosPago) + '</div><div class="fr">' + inp('s-tel', 'Teléfono de la administración', cfg.telAdministracion, 'tel') + '</div>' +
       '<button class="btn p" onclick="guardarAjustes()">Guardar</button></div>' +
     '<div class="card"><h3>Socios / copropietarios</h3><div id="s-socios">' + cfg.socios.map(function(s, k){ return '<div class="lines"><div class="ln" style="grid-template-columns:1fr 32px"><input class="f" value="' + esc(s.nombre) + '" onchange="DB.config.socios[' + k + '].nombre=this.value;guardarConfig();renderTabs()"><span></span></div></div>'; }).join('') + '</div>' +
       '<button class="btn sm" onclick="agregarSocio()">+ Socio</button><div class="hint" style="margin-top:8px">El porcentaje de cada uno se define en cada inmueble. Con el selector “Vista” de arriba ves todo como lo ve cada socio.</div></div>' +
@@ -3080,6 +3171,7 @@ function guardarAjustes(){
   var c = DB.config;
   c.emisor = val('s-emisor'); c.emisorDatos = val('s-emdat'); c.administrador = val('s-adm'); c.reciboPuntoVenta = val('s-pv') || '0001'; c.reciboNro = num(val('s-nro')) || 1;
   c.comisionPct = num(val('s-com')); c.comisionBase = val('s-comb'); c.punitorioDiarioPct = num(val('s-pun')); c.diaVencimiento = num(val('s-dv')) || 10;
+  c.datosPago = val('s-pago'); c.telAdministracion = val('s-tel');
   c.avisoAjusteDias = num(val('s-avaj')) || 30; c.avisoVencimientoDias = num(val('s-avve')) || 60;
   guardarConfig(); toast('Ajustes guardados'); renderTodo();
 }
@@ -3266,7 +3358,7 @@ function init(){
   cargarLocal();
   cargarCacheMercado();
   var h = (location.hash || '').slice(1);
-  if (TABS.some(function(t){ return t[0] === h; })) PAGINA = h;
+  if (TABS.some(function(t){ return t[0] === h; }) || h === 'mensajes' || h === 'mialquiler') PAGINA = h;
   if (DB.config.socios.every(function(s){ return s.id !== VISTA; })) VISTA = 'total';
   if (conFirebase()) {
     // Sesión guardada: entra directo (el token se renueva solo). Si no, pantalla de ingreso.
@@ -3288,6 +3380,7 @@ function init(){
   actualizarMercado(false).then(function(){ renderTodo(); notificarSiCorresponde(); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function(){});
   chequearVersion(); setInterval(chequearVersion, 30 * 60e3);
+  iniciarChat();
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') cerrarModal(); });
 }
 window.addEventListener('DOMContentLoaded', init);
@@ -3295,48 +3388,75 @@ window.addEventListener('DOMContentLoaded', init);
 // Usuarios y permisos, registro de actividad y "Mi cuenta"
 // ═══════════════════════════════════════════
 function htmlUsuariosCard(){
+  var locs = vivos('contratos').filter(function(c){ return estadoContrato(c) === 'vigente'; }).sort(function(a, b){ return a.locatario.nombre.localeCompare(b.locatario.nombre); });
   return '<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Usuarios y permisos</h3><button class="btn p sm" onclick="modalUsuario()">+ Usuario</button></div>' +
-    '<p class="small muted" style="margin-top:0">Los <b>administradores</b> cargan y modifican todo. Los <b>dueños</b> entran con su cuenta de Google y solo <b>ven</b> la cuenta de sus inmuebles (los que figuran a su nombre en la titularidad), desde el celular o la computadora.' +
+    '<p class="small muted" style="margin-top:0">Los <b>administradores</b> cargan y modifican todo y leen todas las conversaciones. Los <b>dueños</b> ven solo sus inmuebles. Los <b>locatarios</b> ven solo su alquiler (monto, pagos, recibos y contrato). Todos entran con su cuenta de Google desde el celular o la computadora, y cada uno tiene su chat privado con la administración.' +
     (conFirebase() ? '' : ' <span class="tag t-warn">Falta activar Firebase: hasta entonces los permisos no se aplican en el servidor (ver SEGURIDAD.md)</span>') + '</p>' +
     '<div id="usr-list"><div class="hint">Cargando…</div></div>' +
-    '<div class="card-h" style="margin-top:14px"><span class="small muted">Ver la app exactamente como la ve cada dueño (solo en esta pantalla):</span></div><div class="chips">' +
-    DB.config.socios.map(function(s){ return '<button class="btn sm" onclick="simularDueno(\'' + s.id + '\')">Ver como ' + esc(s.nombre) + '</button>'; }).join('') + '</div></div>';
+    '<div class="card-h" style="margin-top:14px"><span class="small muted">Ver la app exactamente como la ve cada persona (solo en esta pantalla):</span></div><div class="chips">' +
+    DB.config.socios.map(function(s){ return '<button class="btn sm" onclick="simularDueno(\'' + s.id + '\')">Ver como ' + esc(s.nombre) + '</button>'; }).join('') +
+    (locs.length ? '<select class="f" style="width:auto" onchange="if(this.value)simularDueno(this.value)"><option value="">Ver como locatario…</option>' + locs.map(function(c){ return '<option value="loc:' + c.id + '">' + esc(c.locatario.nombre) + '</option>'; }).join('') + '</select>' : '') +
+    '</div></div>';
 }
 function cargarUsuarios(){
   return conFirebase() ? fsListUsuarios().then(function(u){ USUARIOS_CACHE = u; return u; }) : Promise.resolve(DB.config.usuarios || []);
 }
+function permisoUsuario(u){
+  if (u.rol === 'admin') return ['<span class="tag t-ok">Administrador</span>', 'Todo'];
+  if (u.rol === 'locatario') { var c = byId('contratos', u.contratoId); return ['<span class="tag t-blue">Locatario</span>', c ? esc(nombreInm(c.inmuebleId)) : '—']; }
+  return ['<span class="tag t-info">Dueño · solo lectura</span>', esc(u.socioId ? nombreSocio(u.socioId) : '—')];
+}
 function pintarUsuarios(){
   var el = $('usr-list'); if (!el) return;
   cargarUsuarios().then(function(us){
-    us = us.slice().sort(function(a, b){ return (a.rol === 'admin' ? 0 : 1) - (b.rol === 'admin' ? 0 : 1) || (a.nombre || a.email).localeCompare(b.nombre || b.email); });
-    el.innerHTML = us.length ? '<div class="tw"><table><thead><tr><th>Nombre</th><th>Cuenta de Google</th><th>Permiso</th><th>Ve los inmuebles de</th><th></th></tr></thead><tbody>' + us.map(function(u){
-      return '<tr><td><b>' + esc(u.nombre || '') + '</b></td><td>' + esc(u.email) + '</td><td>' + (u.rol === 'admin' ? '<span class="tag t-ok">Administrador</span>' : '<span class="tag t-info">Dueño · solo lectura</span>') + '</td>' +
-        '<td>' + (u.rol === 'admin' ? 'Todos' : esc(u.socioId ? nombreSocio(u.socioId) : '—')) + '</td><td><button class="btn sm" onclick="modalUsuario(\'' + esc(u.email) + '\')">Editar</button></td></tr>';
-    }).join('') + '</tbody></table></div>' : '<div class="hint">Todavía no hay usuarios. Agregá a Antonella como administradora y a Benjamín como dueño.</div>';
+    var orden = { admin: 0, dueno: 1, locatario: 2 };
+    us = us.slice().sort(function(a, b){ return (orden[a.rol] || 0) - (orden[b.rol] || 0) || (a.nombre || a.email).localeCompare(b.nombre || b.email); });
+    el.innerHTML = us.length ? '<div class="tw"><table><thead><tr><th>Nombre</th><th>Cuenta de Google</th><th>Permiso</th><th>Ve</th><th></th></tr></thead><tbody>' + us.map(function(u){
+      var pm = permisoUsuario(u);
+      return '<tr><td><b>' + esc(u.nombre || '') + '</b></td><td>' + esc(u.email) + '</td><td>' + pm[0] + '</td><td class="small">' + pm[1] + '</td><td><button class="btn sm" onclick="modalUsuario(\'' + esc(u.email) + '\')">Editar</button></td></tr>';
+    }).join('') + '</tbody></table></div>' : '<div class="hint">Todavía no hay usuarios.</div>';
   }).catch(function(e){ el.innerHTML = '<div class="hint">No se pudieron leer los usuarios: ' + esc(e.message) + '</div>'; });
 }
-function modalUsuario(email){
+// prefill: datos sugeridos para un alta (por ejemplo desde un contrato: el locatario)
+function modalUsuario(email, prefill){
   cargarUsuarios().then(function(us){
-    var u = email ? us.filter(function(x){ return x.email === email; })[0] : { email: '', nombre: '', rol: 'dueno', socioId: '' };
+    var u = email ? us.filter(function(x){ return x.email === email; })[0] : Object.assign({ email: '', nombre: '', rol: 'dueno', socioId: '', contratoId: '' }, prefill || {});
+    var locs = vivos('contratos').filter(function(c){ return estadoContrato(c) !== 'finalizado' || c.id === u.contratoId; }).sort(function(a, b){ return a.locatario.nombre.localeCompare(b.locatario.nombre); });
     abrirModal(email ? 'Editar usuario' : 'Nuevo usuario',
-      '<div class="fr">' + inp('us-mail', 'Cuenta de Google (email)', u.email, 'email', email ? 'disabled' : 'placeholder="nombre@gmail.com"') + inp('us-nom', 'Nombre', u.nombre, 'text', 'placeholder="Ej: Antonella"') + '</div>' +
-      '<div class="fr">' + sel('us-rol', 'Permiso', [['dueno', ROLES.dueno], ['admin', ROLES.admin]], u.rol) +
-        sel('us-socio', 'Es el socio / dueño', [['', '— ninguno (ej. administradora) —']].concat(DB.config.socios.map(function(s){ return [s.id, s.nombre]; })), u.socioId) + '</div>' +
-      '<div class="hint">Un dueño ve solo los inmuebles donde ese socio figura en la titularidad (los propios y los compartidos), con sus cobros, gastos, recibos, liquidación y rentabilidad. No puede cargar ni modificar nada.</div>',
+      '<div class="fr">' + inp('us-mail', 'Cuenta de Google (email)', u.email, 'email', email ? 'disabled' : 'placeholder="nombre@gmail.com"') + inp('us-nom', 'Nombre', u.nombre, 'text') + '</div>' +
+      '<div class="fr">' + sel('us-rol', 'Permiso', [['locatario', ROLES.locatario], ['dueno', ROLES.dueno], ['admin', ROLES.admin]], u.rol, 'onchange="usRol()"') +
+        '<div id="us-socio-w">' + sel('us-socio', 'Es el socio / dueño', [['', '— ninguno (ej. administradora) —']].concat(DB.config.socios.map(function(s){ return [s.id, s.nombre]; })), u.socioId) + '</div>' +
+        '<div id="us-ctr-w">' + sel('us-ctr', 'Contrato', [['', '— elegir —']].concat(locs.map(function(c){ return [c.id, c.locatario.nombre + ' · ' + nombreInm(c.inmuebleId)]; })), u.contratoId) + '</div></div>' +
+      '<div class="hint" id="us-ayuda"></div>' +
+      (u.email && !/@gmail\.com$/i.test(u.email) ? '<div class="hint" style="margin-top:6px">Este mail no es de Gmail: para ingresar necesita una cuenta de Google creada con esa dirección (accounts.google.com → Crear cuenta → Usar mi dirección de correo actual).</div>' : ''),
       (email && email !== SUPERADMIN ? '<button class="btn d" onclick="borrarUsuario(\'' + esc(email) + '\')">Quitar acceso</button><span style="flex:1"></span>' : '') +
       '<button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="guardarUsuario(\'' + esc(email || '') + '\')">Guardar</button>');
+    usRol();
   });
 }
+function usRol(){
+  var r = val('us-rol');
+  $('us-socio-w').style.display = r === 'locatario' ? 'none' : '';
+  $('us-ctr-w').style.display = r === 'locatario' ? '' : 'none';
+  $('us-ayuda').textContent = {
+    locatario: 'Ve solo su alquiler: monto actual, próxima actualización, pagos y recibos, su contrato y documentos, y su chat con la administración. No ve datos del dueño, costos ni gastos.',
+    dueno: 'Ve solo los inmuebles donde ese socio figura en la titularidad (propios y compartidos): cobros, gastos, recibos, liquidación y rentabilidad, y su chat con la administración. No puede cargar ni modificar nada.',
+    admin: 'Carga y modifica todo, y lee todas las conversaciones.'
+  }[r];
+}
 function guardarUsuario(email){
-  var u = { email: (email || val('us-mail')).toLowerCase().trim(), nombre: val('us-nom'), rol: val('us-rol'), socioId: val('us-socio') };
+  var r = val('us-rol');
+  var u = { email: (email || val('us-mail')).toLowerCase().trim(), nombre: val('us-nom'), rol: r, socioId: r === 'locatario' ? '' : val('us-socio'), contratoId: r === 'locatario' ? val('us-ctr') : '' };
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u.email)) { toast('Email inválido'); return; }
   if (u.rol === 'dueno' && !u.socioId) { toast('Elegí de qué socio es dueño'); return; }
+  if (u.rol === 'locatario' && !u.contratoId) { toast('Elegí el contrato del locatario'); return; }
   if (u.email === SUPERADMIN && u.rol !== 'admin') { toast('Esta cuenta es siempre administradora'); return; }
   var p = conFirebase() ? fsPutUsuario(u) : Promise.resolve().then(function(){
     DB.config.usuarios = (DB.config.usuarios || []).filter(function(x){ return x.email !== u.email; }).concat([u]); guardarConfig();
   });
   p.then(function(){
-    auditoriaManual(email ? 'modificación' : 'alta', 'usuarios', u.email, u.email + ' → ' + (u.rol === 'admin' ? 'administrador' : 'dueño de ' + nombreSocio(u.socioId)));
+    var desc = u.rol === 'admin' ? 'administrador' : u.rol === 'locatario' ? 'locatario de ' + nombreClave('loc:' + u.contratoId) : 'dueño de ' + nombreSocio(u.socioId);
+    auditoriaManual(email ? 'modificación' : 'alta', 'usuarios', u.email, u.email + ' → ' + desc);
     USUARIOS_CACHE = null; cerrarModal(); toast('Usuario guardado'); pintarUsuarios();
   }).catch(function(e){ toast(e.message, 5000); });
 }
@@ -3374,11 +3494,12 @@ function htmlActividad(){
 function renderMiCuenta(){
   var s = socioDelUsuario();
   var inms = vivos('inmuebles').filter(function(i){ return factorInm(i) > 0; });
-  $('p-ajustes').innerHTML = '<h2>Mi cuenta</h2><p class="sub">Acceso de consulta: ves la cuenta de tus inmuebles. La carga de datos la hace la administración.</p><div class="grid g2">' +
-    '<div class="card"><h3>' + esc(SIMULAR ? nombreSocio(SIMULAR) : quienSoy()) + '</h3><div class="kv">' +
+  var loc = esLocatario(), c = loc ? byId('contratos', contratoDelUsuario()) : null;
+  $('p-ajustes').innerHTML = '<h2>Mi cuenta</h2><p class="sub">Acceso de consulta: ' + (loc ? 'ves tu alquiler, tus pagos y recibos' : 'ves la cuenta de tus inmuebles') + '. La carga de datos la hace la administración.</p><div class="grid g2">' +
+    '<div class="card"><h3>' + esc(SIMULAR ? nombreClave(SIMULAR) : quienSoy()) + '</h3><div class="kv">' +
       '<div>Cuenta</div><div>' + esc(USUARIO ? USUARIO.email : '(vista simulada)') + '</div>' +
-      '<div>Permiso</div><div><span class="tag t-info">Dueño · solo lectura</span></div>' +
-      '<div>Inmuebles</div><div>' + inms.length + '</div>' +
+      '<div>Permiso</div><div><span class="tag t-info">' + (loc ? 'Locatario' : 'Dueño · solo lectura') + '</span></div>' +
+      (loc ? '<div>Inmueble</div><div>' + esc(c ? nombreInm(c.inmuebleId) : '—') + '</div>' : '<div>Inmuebles</div><div>' + inms.length + '</div>') +
       '<div>Administración</div><div>' + esc(DB.config.administrador || '') + '</div></div>' +
       (SIMULAR ? '<button class="btn" style="margin-top:12px" onclick="simularDueno(null)">Volver a la vista de administrador</button>' : '<button class="btn" style="margin-top:12px" onclick="salir()">Cerrar sesión</button>') + '</div>' +
     '<div class="card"><h3>Usarla en el celular</h3><ol class="small" style="padding-left:18px;margin:0">' +
@@ -3386,6 +3507,10 @@ function renderMiCuenta(){
       '<li><b>iPhone (Safari):</b> abrí el link, tocá Compartir → <i>Agregar a inicio</i>.</li>' +
       '<li>Queda como una app más. La sesión se mantiene: no hace falta volver a ingresar cada vez.</li></ol></div>' +
   '</div>';
+}
+function darAccesoLocatario(cid){
+  var c = byId('contratos', cid); if (!c) return;
+  modalUsuario(null, { email: (c.locatario.email || '').toLowerCase(), nombre: c.locatario.nombre, rol: 'locatario', contratoId: c.id });
 }
 // ═══════════════════════════════════════════
 // Importación de contratos (archivo .json armado a partir de los contratos firmados)
@@ -3515,6 +3640,183 @@ function elegirArchivosContratos(){
     };
   };
   fi.click();
+}
+// ═══════════════════════════════════════════
+// MENSAJES: chat privado de cada locatario y cada dueño con la administración.
+// Cada persona tiene su propia conversación (hilo 'h:<clave>'): la ve ella y los administradores.
+// Nadie más puede leerla (lo controla el servidor, ver firestore.rules).
+// Firestore por REST no avisa en tiempo real: se consulta cada 20 segundos mientras la app está abierta.
+// ═══════════════════════════════════════════
+var CHAT = { hilo: null, ultimo: 0, timer: null, leidos: null, primera: true };
+function hiloDe(clave){ return 'h:' + clave; }
+function claveDeHilo(h){ return String(h || '').slice(2); }
+function miHilo(){ return hiloDe(claveUsuario()); }
+function leidos(){ if (!CHAT.leidos) { try { CHAT.leidos = JSON.parse(localStorage.getItem('inmoflow_leidos') || '{}'); } catch (e) { CHAT.leidos = {}; } } return CHAT.leidos; }
+function marcarLeido(h){ var l = leidos(), u = ultimoDeHilo(h); if (u) { l[h] = u.updatedAt; try { localStorage.setItem('inmoflow_leidos', JSON.stringify(l)); } catch (e) {} } }
+function mensajesDe(h){ return (DB.mensajes || []).filter(function(m){ return m.hilo === h; }).sort(function(a, b){ return a.updatedAt - b.updatedAt; }); }
+function ultimoDeHilo(h){ var ms = mensajesDe(h); return ms[ms.length - 1]; }
+function esMio(m){ return m.autorEmail === emailYo(); }
+function noLeidos(h){ var t = leidos()[h] || 0; return mensajesDe(h).filter(function(m){ return !esMio(m) && m.updatedAt > t && (esAdmin() ? m.autorRol !== 'admin' : m.autorRol === 'admin'); }).length; }
+function totalNoLeidos(){
+  if (esAdmin()) { var hs = {}; (DB.mensajes || []).forEach(function(m){ hs[m.hilo] = 1; }); return sum(Object.keys(hs), noLeidos); }
+  return claveUsuario() ? noLeidos(miHilo()) : 0;
+}
+
+// ─── traer y enviar ──────────────────────────
+function chatTraer(){
+  if (!conFirebase() || !conectado() || SIMULAR) return Promise.resolve();
+  var q = esAdmin()
+    ? fsRunQuery('mensajes', { field: { fieldPath: 'updatedAt' }, op: 'GREATER_THAN', value: { integerValue: String(CHAT.ultimo) } })
+    : (claveUsuario() ? fsRunQuery('mensajes', { field: { fieldPath: 'hilo' }, op: 'EQUAL', value: { stringValue: miHilo() } }) : Promise.resolve([]));
+  return q.then(function(arr){
+    var nuevos = [];
+    DB.mensajes = DB.mensajes || [];
+    arr.forEach(function(m){
+      if (DB.mensajes.some(function(x){ return x.id === m.id; })) return;
+      DB.mensajes.push(m); if (!esMio(m)) nuevos.push(m);
+      if (m.updatedAt > CHAT.ultimo) CHAT.ultimo = m.updatedAt;
+    });
+    // reintenta los que no se pudieron enviar
+    DB.mensajes.filter(function(m){ return m.pendiente; }).forEach(enviarAlServidor);
+    if (nuevos.length) {
+      guardarLocal();
+      if (!CHAT.primera) avisarNuevos(nuevos);
+      if (PAGINA === 'mensajes') renderMensajes(); else renderTabs();
+    }
+    CHAT.primera = false;
+  }).catch(function(e){ console.warn('chat', e); });
+}
+function iniciarChat(){
+  clearInterval(CHAT.timer);
+  CHAT.ultimo = (DB.mensajes || []).reduce(function(a, m){ return Math.max(a, m.updatedAt || 0); }, 0);
+  CHAT.timer = setInterval(chatTraer, 20000);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) chatTraer(); });
+}
+function avisarNuevos(ms){
+  var de = ms.filter(function(m){ return esAdmin() ? m.autorRol !== 'admin' : m.autorRol === 'admin'; });
+  if (!de.length) return;
+  var m = de[de.length - 1], quien = esAdmin() ? nombreClave(claveDeHilo(m.hilo)) : (m.autorNombre || 'Administración');
+  if (!(PAGINA === 'mensajes' && !document.hidden && (!esAdmin() || CHAT.hilo === m.hilo))) toast('Mensaje nuevo de ' + quien, 4000);
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    try { new Notification('InmoFlow · ' + quien, { body: m.texto.slice(0, 120), icon: 'icon-192.png' }); } catch (e) {}
+  }
+}
+function enviarAlServidor(m){
+  if (!conFirebase() || !conectado()) return Promise.resolve();
+  var limpio = Object.assign({}, m); delete limpio.pendiente;
+  return fsPut('mensajes', limpio).then(function(){ m.pendiente = false; guardarLocal(); if (PAGINA === 'mensajes') renderMensajes(); })
+    .catch(function(e){ console.warn('enviar', e); });
+}
+function chatEnviar(){
+  if (SIMULAR) { toast('Estás viendo la app como otra persona: no se puede enviar'); return; }
+  var ta = $('chat-txt'); if (!ta) return;
+  var texto = ta.value.trim(); if (!texto) return;
+  var h = esAdmin() ? CHAT.hilo : miHilo(); if (!h || h === 'h:') { toast('Elegí una conversación'); return; }
+  var m = { id: uid(), hilo: h, texto: texto.slice(0, 4000), fecha: new Date().toISOString(), updatedAt: Date.now(),
+    autorEmail: emailYo(), autorNombre: quienSoy(), autorRol: esAdmin() ? 'admin' : (esLocatario() ? 'locatario' : 'dueno'), pendiente: true };
+  DB.mensajes = (DB.mensajes || []).concat([m]); guardarLocal();
+  ta.value = ''; renderMensajes();
+  if (conFirebase()) enviarAlServidor(m); else { m.pendiente = false; guardarLocal(); renderMensajes(); }
+}
+
+// ─── pantalla ────────────────────────────────
+function etiquetaHilo(h){
+  var k = claveDeHilo(h), loc = k.indexOf('loc:') === 0, c = loc ? byId('contratos', k.slice(4)) : null;
+  return { nombre: nombreClave(k), rol: loc ? 'Locatario' : 'Dueño', sub: loc && c ? nombreInm(c.inmuebleId) : '' };
+}
+function horaMsj(m){ var d = new Date(m.fecha); return (fDate(m.fecha.slice(0, 10)) === fDate(hoy()) ? '' : fDate(m.fecha.slice(0, 10)) + ' ') + p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+function htmlHilo(h, titulo, subtitulo){
+  var ms = mensajesDe(h);
+  setTimeout(function(){ marcarLeido(h); renderTabs(); var b = $('chat-msgs'); if (b) b.scrollTop = b.scrollHeight; }, 0);
+  return '<div class="chat-box"><div class="chat-h">' + (esAdmin() ? '<button class="btn sm ghost chat-back" onclick="CHAT.hilo=null;renderMensajes()" aria-label="Volver">‹</button>' : '') +
+    '<div><b>' + esc(titulo) + '</b><div class="small muted">' + esc(subtitulo) + '</div></div></div>' +
+    '<div class="chat-msgs" id="chat-msgs">' + (ms.length ? ms.map(function(m){
+      var mio = esAdmin() ? m.autorRol === 'admin' : esMio(m);
+      return '<div class="msg ' + (mio ? 'yo' : 'otro') + '"><div class="burb">' + (mio && !esAdmin() ? '' : '<div class="autor">' + esc(m.autorRol === 'admin' ? (m.autorNombre || 'Administración') : m.autorNombre) + '</div>') +
+        esc(m.texto).replace(/\n/g, '<br>') + '<div class="hora">' + horaMsj(m) + (m.pendiente ? ' · enviando…' : '') + '</div></div></div>';
+    }).join('') : '<div class="empty">Todavía no hay mensajes. Escribí el primero.</div>') + '</div>' +
+    '<div class="chat-in"><textarea class="f" id="chat-txt" rows="2" placeholder="Escribí un mensaje…" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();chatEnviar()}"></textarea><button class="btn p" onclick="chatEnviar()">Enviar</button></div></div>';
+}
+function renderMensajes(){
+  var el = $('p-mensajes'); if (!el) return;
+  var txt = $('chat-txt') ? $('chat-txt').value : '';
+  if (!esAdmin()) {
+    var k = claveUsuario();
+    el.innerHTML = '<h2>Mensajes</h2><p class="sub">Tu conversación con la administración. La leen solamente vos y los administradores.</p>' +
+      (k ? htmlHilo(hiloDe(k), DB.config.administrador ? 'Administración · ' + DB.config.administrador : 'Administración', 'Consultas, reclamos, comprobantes de pago') : '<div class="card empty">Tu usuario no tiene una cuenta asociada todavía.</div>');
+  } else {
+    var hs = {}; (DB.mensajes || []).forEach(function(m){ hs[m.hilo] = 1; });
+    if (CHAT.hilo) hs[CHAT.hilo] = 1;
+    var lista = Object.keys(hs).map(function(h){ var u = ultimoDeHilo(h); return { h: h, u: u, n: noLeidos(h), e: etiquetaHilo(h) }; })
+      .sort(function(a, b){ return ((b.u && b.u.updatedAt) || 0) - ((a.u && a.u.updatedAt) || 0); });
+    var col = '<div class="chat-list"><div class="card-h" style="padding:10px 12px"><b>Conversaciones</b><button class="btn sm p" onclick="nuevaConversacion()">+ Nueva</button></div>' +
+      (lista.length ? lista.map(function(x){
+        return '<button class="chat-item' + (CHAT.hilo === x.h ? ' on' : '') + '" onclick="CHAT.hilo=\'' + x.h + '\';renderMensajes()"><span class="av">' + esc(iniciales(x.e.nombre)) + '</span><span class="ci-t"><b>' + esc(x.e.nombre) + '</b>' +
+          '<span class="small muted">' + esc(x.e.rol) + (x.e.sub ? ' · ' + esc(x.e.sub) : '') + '</span><span class="small ci-u">' + (x.u ? esc((x.u.autorRol === 'admin' ? 'Vos: ' : '') + x.u.texto.slice(0, 60)) : 'sin mensajes') + '</span></span>' +
+          (x.n ? '<span class="cnt">' + x.n + '</span>' : '') + '</button>';
+      }).join('') : '<div class="empty small">Todavía no hay conversaciones.</div>') + '</div>';
+    var e = CHAT.hilo ? etiquetaHilo(CHAT.hilo) : null;
+    el.innerHTML = '<h2>Mensajes</h2><p class="sub">Cada locatario y cada dueño tiene su conversación privada con la administración. Solo los administradores ven todas.</p>' +
+      '<div class="chat-wrap' + (CHAT.hilo ? ' abierto' : '') + '">' + col +
+      (CHAT.hilo ? htmlHilo(CHAT.hilo, e.nombre, e.rol + (e.sub ? ' · ' + e.sub : '') + ' · conversación privada') : '<div class="chat-box chat-vacio"><div class="empty">Elegí una conversación o empezá una nueva.</div></div>') + '</div>';
+  }
+  if (txt && $('chat-txt')) $('chat-txt').value = txt;
+}
+function nuevaConversacion(){
+  var socios = DB.config.socios.map(function(s){ return [s.id, 'Dueño · ' + s.nombre]; });
+  var locs = vivos('contratos').filter(function(c){ return estadoContrato(c) === 'vigente'; }).sort(function(a, b){ return a.locatario.nombre.localeCompare(b.locatario.nombre); })
+    .map(function(c){ return ['loc:' + c.id, 'Locatario · ' + c.locatario.nombre + ' (' + nombreInm(c.inmuebleId) + ')']; });
+  abrirModal('Nueva conversación', sel('nc-k', 'Con', locs.concat(socios), '') + '<div class="hint" style="margin-top:8px">Para que la persona lea y responda desde su celular, tiene que tener usuario (Ajustes → Usuarios y permisos).</div>',
+    '<button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="CHAT.hilo=hiloDe(val(\'nc-k\'));cerrarModal();renderMensajes()">Abrir</button>');
+}
+// ═══════════════════════════════════════════
+// Vista del LOCATARIO: su alquiler, su cuenta, sus recibos y su contrato. Nada más.
+// (El servidor solo le entrega su contrato y sus cobros; ver firestore.rules.)
+// ═══════════════════════════════════════════
+function inmDeContrato(c){
+  var i = byId('inmuebles', c.inmuebleId);
+  return i ? { nombre: i.nombre, direccion: i.direccion || '', localidad: i.localidad || '' } : (c._inm || { nombre: '', direccion: '', localidad: '' });
+}
+function renderMiAlquiler(){
+  var cid = contratoDelUsuario(), c = cid ? byId('contratos', cid) : null;
+  if (!c) {
+    $('p-mialquiler').innerHTML = '<h2>Mi alquiler</h2><div class="card empty">Todavía no aparecen los datos de tu contrato.<br>Si recién te dieron acceso, tocá el indicador de arriba a la derecha para actualizar, o escribile a la administración.<br><button class="btn p" style="margin-top:10px" onclick="ir(\'mensajes\')">Escribir a la administración</button></div>';
+    return;
+  }
+  var ph = perHoy(), inm = inmDeContrato(c), cc = cuentaCorriente(c);
+  var f = cc.filas.filter(function(x){ return x.periodo === ph; })[0];
+  var deuda = sum(deudaContrato(c), function(x){ return x.debe - x.pagado; }), pa = proximoAjuste(c);
+  var dv = c.diaVencimiento || DB.config.diaVencimiento || 10, cfg = DB.config;
+  var h = '<h2>Mi alquiler</h2><p class="sub">' + esc([inm.direccion || inm.nombre, inm.localidad].filter(Boolean).join(', ')) + '</p>' +
+    '<div class="kpis">' +
+      kpi('Alquiler de ' + perNom(ph).split(' ')[0].toLowerCase(), fmt(montoVigente(c, ph)), f ? tagEstado(f.estado) : '') +
+      kpi('Se paga', 'del 1 al ' + dv, 'de cada mes, por adelantado') +
+      kpi('Saldo', deuda > 0 ? '<span class="neg-v">' + fmt(deuda) + '</span>' : 'Al día', deuda > 0 ? deudaContrato(c).map(function(x){ return perNom(x.periodo); }).join(', ') : 'sin deuda') +
+      kpi('Próxima actualización', pa ? perNom(pa) : '—', pa ? 'según ' + esc((INDICES[c.indice] || c.indice).replace(/ —.*$/, '')) : '') +
+    '</div>' +
+    '<div class="grid g2">' +
+      '<div class="card"><h3>Cómo pagar</h3>' +
+        (cfg.datosPago ? '<div style="white-space:pre-wrap" class="b">' + esc(cfg.datosPago) + '</div>' : '<div class="hint">Consultá a la administración los datos para transferir.</div>') +
+        '<p class="small muted" style="margin-bottom:0">Después de transferir, mandá el comprobante por el chat: así se registra el pago y te llega el recibo.</p>' +
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn p" onclick="ir(\'mensajes\')">Escribir a la administración</button></div></div>' +
+      '<div class="card"><h3>Mi contrato</h3><div class="kv">' +
+        '<div>Inmueble</div><div>' + esc(inm.direccion || inm.nombre) + '</div>' +
+        '<div>Vigencia</div><div>' + fDate(c.inicio) + ' al ' + fDate(c.fin) + '</div>' +
+        '<div>Actualización</div><div>' + esc((INDICES[c.indice] || c.indice).replace(/ —.*$/, '')) + (c.periodicidad ? ', cada ' + c.periodicidad + ' meses' : '') + '</div>' +
+        '<div>Locatario</div><div>' + esc(c.locatario.nombre) + (c.colocatarios && c.colocatarios.length ? ' y ' + c.colocatarios.map(function(x){ return esc(x.nombre); }).join(', ') : '') + '</div>' +
+        '<div>Garantes</div><div>' + ((c.garantes || []).map(function(g){ return esc(g.nombre); }).join('<br>') || '—') + '</div>' +
+        '<div>Administra</div><div>' + esc(cfg.administrador || '') + '</div>' +
+      '</div>' +
+      ((c.docs || []).length ? '<div class="liq-sec">Documentos</div>' + c.docs.map(function(d, k){ return '<div class="row"><span>' + esc(d.nombre) + '</span><span><a href="#" onclick="abrirDoc(\'contratos\',\'' + c.id + '\',' + k + ');return false">abrir</a></span></div>'; }).join('') : '') +
+      '</div>' +
+    '</div>' +
+    '<h3 style="margin-top:18px">Mis pagos y recibos</h3>' +
+    '<div class="tw"><table><thead><tr><th>Mes</th><th class="n">Alquiler</th><th class="n">Pagado</th><th>Estado</th><th>Recibo</th></tr></thead><tbody>' +
+      cc.filas.slice().reverse().map(function(x){
+        return '<tr><td><b>' + perNom(x.periodo) + '</b></td><td class="n">' + fmt(x.debe) + '</td><td class="n">' + fmt(x.pagado) + '</td><td>' + tagEstado(x.estado) + '</td>' +
+          '<td>' + x.pagos.map(function(p){ return '<button class="btn sm" onclick="verRecibo(\'' + p.id + '\')">' + (/^PLAN/.test(p.reciboNro || '') ? 'Ver' : 'N° ' + esc(p.reciboNro || '')) + '</button>'; }).join(' ') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  $('p-mialquiler').innerHTML = h;
 }
 </script>
 </body>

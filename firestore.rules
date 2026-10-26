@@ -1,7 +1,9 @@
 rules_version = '2';
 // Reglas de seguridad de InmoFlow (Firestore).
-// - Administradores (rol "admin" en inmoflow_usuarios/{email}): leen y escriben todo.
+// - Administradores (rol "admin" en inmoflow_usuarios/{email}): leen y escriben todo y leen todos los chats.
 // - Dueños (rol "dueno"): solo LEEN los documentos donde su socioId figura en visiblePara.
+// - Locatarios (rol "locatario"): solo LEEN su contrato y sus cobros (visiblePara contiene 'loc:<contratoId>').
+// - Chat: cada dueño o locatario lee y escribe solo en su conversación ('h:<clave>'); nadie lee la de otro.
 // - Nadie más puede leer nada. Toda escritura queda firmada (updatedBy = email de quien escribe).
 // - La auditoría es de solo agregado: no se puede editar ni borrar.
 service cloud.firestore {
@@ -13,7 +15,9 @@ service cloud.firestore {
     function perfil() { return get(/databases/$(db)/documents/inmoflow_usuarios/$(email())).data; }
     function habilitado() { return logueado() && exists(/databases/$(db)/documents/inmoflow_usuarios/$(email())); }
     function esAdmin() { return superadmin() || (habilitado() && perfil().rol == 'admin'); }
-    function socio() { return perfil().socioId; }
+    // clave de lectura: el socio (dueños) o 'loc:<contrato>' (locatarios)
+    function clave() { return perfil().rol == 'locatario' ? 'loc:' + perfil().contratoId : perfil().socioId; }
+    function lector() { return habilitado() && perfil().rol in ['dueno', 'locatario'] && clave() != '' && clave() != 'loc:'; }
     function firmado() { return request.resource.data.updatedBy == email(); }
 
     // Usuarios y roles: cada uno lee el suyo; solo los administradores los crean o cambian.
@@ -22,9 +26,9 @@ service cloud.firestore {
       allow write: if esAdmin();
     }
 
-    // Configuración general (socios, plantillas, comisión): la leen todos los habilitados.
+    // Configuración: la completa solo la leen los administradores; la "publico" (sin datos personales), todos los habilitados.
     match /inmoflow_config/{id} {
-      allow read: if habilitado() || superadmin();
+      allow read: if esAdmin() || (habilitado() && id == 'publico');
       allow write: if esAdmin() && firmado();
     }
 
@@ -35,10 +39,18 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Datos: inmuebles, contratos, cobros, gastos, movimientos y mensajes.
+    // Chat privado con la administración.
+    match /inmoflow_mensajes/{id} {
+      allow read: if esAdmin() || (lector() && resource.data.hilo == 'h:' + clave());
+      allow create: if (esAdmin() && firmado())
+                    || (lector() && firmado() && request.resource.data.hilo == 'h:' + clave() && request.resource.data.autorEmail == email());
+      allow update, delete: if esAdmin();
+    }
+
+    // Datos: inmuebles, contratos, cobros, gastos, movimientos y mensajes enviados.
     match /{col}/{id} {
       allow read: if col in ['inmoflow_inmuebles', 'inmoflow_contratos', 'inmoflow_pagos', 'inmoflow_gastos', 'inmoflow_movimientos', 'inmoflow_comunicaciones']
-                  && (esAdmin() || (habilitado() && socio() != '' && socio() in resource.data.visiblePara));
+                  && (esAdmin() || (lector() && clave() in resource.data.visiblePara));
       allow write: if col in ['inmoflow_inmuebles', 'inmoflow_contratos', 'inmoflow_pagos', 'inmoflow_gastos', 'inmoflow_movimientos', 'inmoflow_comunicaciones']
                    && esAdmin() && firmado();
     }

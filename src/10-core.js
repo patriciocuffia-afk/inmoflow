@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════
 // InmoFlow — núcleo: utilidades, base de datos local y sincronización
 // ═══════════════════════════════════════════
-var APP_VERSION = '2026-10-22-3';
+var APP_VERSION = '2026-10-26-1';
 var OAUTH_CLIENT_ID = '485000953207-g3r6kjptl4dvoc8p0u1aj20nket5mdrm.apps.googleusercontent.com';
 var PROJECT_ID = 'costo-de-obras';
 var FS_BASE = 'https://firestore.googleapis.com/v1/projects/' + PROJECT_ID + '/databases/(default)/documents';
@@ -61,6 +61,8 @@ function configBase(){
     reciboNro: 1,
     avisoAjusteDias: 30,
     avisoVencimientoDias: 60,
+    datosPago: '',          // alias o CBU para transferir (lo ven los locatarios)
+    telAdministracion: '',
     categoriasGasto: ['Arreglos', 'Pintura', 'Electricidad', 'Plomería', 'Gas', 'Albañilería', 'Impuesto Rentas', 'Tasa municipal', 'Expensas', 'Seguro', 'Servicios', 'Honorarios', 'Mejora / inversión', 'Otros'],
     plantillas: null,
     updatedAt: 0
@@ -74,6 +76,7 @@ function cargarLocal(){
       var d = JSON.parse(raw);
       COLS.forEach(function(c){ DB[c] = d[c] || []; });
       DB.auditoria = d.auditoria || [];
+      DB.mensajes = d.mensajes || [];
       rehacerSnap();
       DB.config = d.config || null;
       PENDIENTES = d._pend || {};
@@ -85,7 +88,7 @@ function cargarLocal(){
 }
 
 function guardarLocal(){
-  var d = { _pend: PENDIENTES, config: DB.config, auditoria: DB.auditoria || [] };
+  var d = { _pend: PENDIENTES, config: DB.config, auditoria: DB.auditoria || [], mensajes: DB.mensajes || [] };
   COLS.forEach(function(c){ d[c] = DB[c]; });
   try { localStorage.setItem(LS_DB, JSON.stringify(d)); }
   catch (e) { alert('No se pudo guardar localmente (almacenamiento lleno). Exportá un backup.'); }
@@ -122,9 +125,17 @@ function guardarConfig(){
   if (soloLectura()) return;
   DB.config.updatedAt = Date.now();
   DB.config.modPor = quienSoy();
-  PENDIENTES['config/config'] = true;
+  PENDIENTES['config/config'] = true; PENDIENTES['config/publico'] = true;
   guardarLocal();
   programarSync();
+}
+// Lo que pueden leer dueños y locatarios de la configuración: sin plantillas, usuarios ni datos personales de los socios.
+function configPublica(){
+  var c = DB.config;
+  return { id: 'publico', updatedAt: c.updatedAt || Date.now(), administrador: c.administrador, emisor: c.emisor, emisorDatos: c.emisorDatos,
+    comisionPct: c.comisionPct, comisionBase: c.comisionBase, diaVencimiento: c.diaVencimiento, punitorioDiarioPct: c.punitorioDiarioPct,
+    reciboPuntoVenta: c.reciboPuntoVenta, datosPago: c.datosPago || '', telAdministracion: c.telAdministracion || '',
+    socios: c.socios.map(function(s){ return { id: s.id, nombre: s.nombre }; }) };
 }
 
 // ─── Google: login + Firestore + Drive ──────
@@ -209,9 +220,11 @@ function fsListAll(col){
 }
 // Para un dueño: solo los documentos donde figura en visiblePara (las reglas exigen esta consulta).
 function fsQuerySocio(col, socioId){
+  return fsRunQuery(col, { field: { fieldPath: 'visiblePara' }, op: 'ARRAY_CONTAINS', value: { stringValue: socioId } });
+}
+function fsRunQuery(col, filtro){
   return fsFetch(fsBase() + ':runQuery', { method: 'POST', body: JSON.stringify({ structuredQuery: {
-    from: [{ collectionId: 'inmoflow_' + col }],
-    where: { fieldFilter: { field: { fieldPath: 'visiblePara' }, op: 'ARRAY_CONTAINS', value: { stringValue: socioId } } }
+    from: [{ collectionId: 'inmoflow_' + col }], where: { fieldFilter: filtro }
   } }) }).then(function(r){ return r.json(); }).then(function(arr){
     var out = [];
     (Array.isArray(arr) ? arr : []).forEach(function(x){ if (x.document) try { out.push(JSON.parse(x.document.fields.json.stringValue)); } catch (e) {} });
@@ -230,13 +243,17 @@ function fsGetDoc(col, id){
   }).catch(function(e){ if (/403/.test(e.message)) return null; throw e; });
 }
 function fsPut(col, obj){
-  var vis = col === 'config' || col === 'auditoria' ? [] : visiblePara(col, obj);
+  var vis = col === 'config' || col === 'auditoria' || col === 'mensajes' ? [] : visiblePara(col, obj);
+  var data = obj;
+  // el locatario no lee inmuebles (tienen costos y datos del dueño): el contrato lleva el nombre y la dirección
+  if (col === 'contratos') { var inm = byId('inmuebles', obj.inmuebleId); data = Object.assign({}, obj, { _inm: inm ? { nombre: inm.nombre, direccion: inm.direccion || '', localidad: inm.localidad || '' } : (obj._inm || null) }); }
   var body = { fields: {
-    json: { stringValue: JSON.stringify(obj) },
+    json: { stringValue: JSON.stringify(data) },
     updatedAt: { integerValue: String(obj.updatedAt || Date.now()) },
     updatedBy: { stringValue: emailYo() },
     visiblePara: { arrayValue: { values: vis.map(function(s){ return { stringValue: s }; }) } }
   } };
+  if (col === 'mensajes') { body.fields.hilo = { stringValue: obj.hilo }; body.fields.autorEmail = { stringValue: obj.autorEmail }; }
   // la auditoría solo se crea (las reglas no permiten modificarla): si ya existe, ya se subió antes
   var soloCrear = col === 'auditoria' ? '?currentDocument.exists=false' : '';
   return fsFetch(fsBase() + '/inmoflow_' + col + '/' + encodeURIComponent(obj.id) + soloCrear, { method: 'PATCH', body: JSON.stringify(body) })
@@ -246,13 +263,13 @@ function fsPut(col, obj){
 // Usuarios: campos planos (las reglas los leen para saber el rol de cada uno).
 function fsPutUsuario(u){
   var email = String(u.email).toLowerCase().trim();
-  var body = { fields: { email: { stringValue: email }, nombre: { stringValue: u.nombre || '' }, rol: { stringValue: u.rol }, socioId: { stringValue: u.socioId || '' }, updatedBy: { stringValue: emailYo() } } };
+  var body = { fields: { email: { stringValue: email }, nombre: { stringValue: u.nombre || '' }, rol: { stringValue: u.rol }, socioId: { stringValue: u.socioId || '' }, contratoId: { stringValue: u.contratoId || '' }, updatedBy: { stringValue: emailYo() } } };
   return fsFetch(fsBase() + '/inmoflow_usuarios/' + encodeURIComponent(email), { method: 'PATCH', body: JSON.stringify(body) })
-    .then(function(r){ if (!r.ok) throw new Error('No se pudo guardar el usuario (' + r.status + ')'); return { email: email, nombre: u.nombre, rol: u.rol, socioId: u.socioId || '' }; });
+    .then(function(r){ if (!r.ok) throw new Error('No se pudo guardar el usuario (' + r.status + ')'); return { email: email, nombre: u.nombre, rol: u.rol, socioId: u.socioId || '', contratoId: u.contratoId || '' }; });
 }
 function fsListUsuarios(){
   return fsFetch(fsBase() + '/inmoflow_usuarios?pageSize=100').then(function(r){ return r.json(); }).then(function(d){
-    return (d.documents || []).map(function(doc){ var f = doc.fields || {}; function s(k){ return f[k] ? f[k].stringValue : ''; } return { email: s('email'), nombre: s('nombre'), rol: s('rol'), socioId: s('socioId') }; });
+    return (d.documents || []).map(function(doc){ var f = doc.fields || {}; function s(k){ return f[k] ? f[k].stringValue : ''; } return { email: s('email'), nombre: s('nombre'), rol: s('rol'), socioId: s('socioId'), contratoId: s('contratoId') }; });
   });
 }
 function fsDelUsuario(email){ return fsFetch(fsBase() + '/inmoflow_usuarios/' + encodeURIComponent(email), { method: 'DELETE' }); }
@@ -275,9 +292,9 @@ function sincronizar(traer){
   if (traer) {
     var cols = duenio ? COLS : COLS.concat(['auditoria']);
     p = Promise.all(cols.map(function(c){
-      var q = duenio ? (USUARIO.socioId ? fsQuerySocio(c, USUARIO.socioId) : Promise.resolve([])) : fsListAll(c);
+      var q = duenio ? (claveDe(USUARIO) ? fsQuerySocio(c, claveDe(USUARIO)) : Promise.resolve([])) : fsListAll(c);
       return q.then(function(arr){ return [c, arr]; });
-    }).concat([fsGetDoc('config', 'config').then(function(cf){ return ['config', cf ? [cf] : []]; })]))
+    }).concat([fsGetDoc('config', duenio ? 'publico' : 'config').then(function(cf){ return ['config', cf ? [cf] : []]; })]))
       .then(function(res){
         res.forEach(function(x){
           var c = x[0];
@@ -288,6 +305,7 @@ function sincronizar(traer){
           }
           x[1].forEach(function(rem){
             if (c === 'config') {
+              if (duenio) { Object.assign(DB.config, rem); return; } // dueños y locatarios: solo la configuración pública
               if ((rem.updatedAt || 0) > (DB.config.updatedAt || 0) && !PENDIENTES['config/config']) DB.config = Object.assign(configBase(), rem);
               return;
             }
@@ -306,16 +324,16 @@ function sincronizar(traer){
     return keys.reduce(function(acc, k){
       return acc.then(function(){
         var c = k.split('/')[0], id = k.slice(c.length + 1);
-        var obj = c === 'config' ? DB.config : (DB[c] || []).find(function(x){ return x.id === id; });
+        var obj = c === 'config' ? (id === 'publico' ? configPublica() : DB.config) : (DB[c] || []).find(function(x){ return x.id === id; });
         if (!obj) { delete PENDIENTES[k]; return; }
-        if (c === 'config') obj.id = 'config';
+        if (c === 'config' && id !== 'publico') obj.id = 'config';
         return fsPut(c, obj).then(function(){ delete PENDIENTES[k]; }).catch(function(e){ fallas.push(e.message); if (/sesión/i.test(e.message)) throw e; });
       });
     }, Promise.resolve()).then(function(){ if (fallas.length) throw new Error(fallas.length + ' cambio(s) no se pudieron subir (' + fallas[0] + '). Se reintenta en la próxima sincronización.'); });
   }).then(function(){
     guardarLocal();
     setSync('on', conFirebase() ? quienSoy() : 'Sincronizado');
-    if (traer) renderTodo();
+    if (traer) { renderTodo(); if (typeof chatTraer === 'function') chatTraer(); }
   }).catch(function(e){
     console.error(e);
     setSync('err', 'Error sync');
